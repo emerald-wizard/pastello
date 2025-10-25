@@ -1,0 +1,9 @@
+.DS_Store
+# Ignore everything under gen/
+gen/**
+
+# ...but keep Go and TS outputs
+!gen/go/
+!gen/ts/
+!gen/go/**
+!gen/ts/**

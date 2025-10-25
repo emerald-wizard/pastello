@@ -1,0 +1,22 @@
+syntax = "proto3";
+package runecraftstudios.pastello.web.auth.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "runecraftstudios/pastello/web/auth/v1;webauthv1";
+
+message StartUserSessionCommand { string client_version = 1; }
+
+message SessionStartedEvent {
+  string session_id = 1;
+  string user_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+}
+
+message Envelope {
+  string correlation_id = 100;
+  oneof msg {
+    StartUserSessionCommand start_user_session_command = 1;
+    SessionStartedEvent     session_started_event     = 2;
+  }
+}

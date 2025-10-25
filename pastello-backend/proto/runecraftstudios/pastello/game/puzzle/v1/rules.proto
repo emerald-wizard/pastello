@@ -1,0 +1,19 @@
+syntax = "proto3";
+package runecraftstudios.pastello.game.puzzle.v1;
+
+
+option go_package = "github.com/runecraft-studios/pastello/internal/gen/runecraftstudios/pastello/game/puzzle/v1;puzzlev1";
+
+enum PuzzleDifficulty {
+  PUZZLE_DIFFICULTY_UNSPECIFIED = 0;
+  PUZZLE_DIFFICULTY_EASY = 1;
+  PUZZLE_DIFFICULTY_MEDIUM = 2;
+  PUZZLE_DIFFICULTY_HARD = 3;
+}
+
+message PuzzleRules {
+  PuzzleDifficulty difficulty = 1;
+  bool allow_hints = 2;
+  uint32 time_limit_seconds = 3;
+  uint32 max_players = 4;
+}

@@ -1,0 +1,34 @@
+syntax = "proto3";
+package runecraftstudios.pastello.game.session.v1;
+
+import "google/protobuf/timestamp.proto";
+import "runecraftstudios/pastello/game/types/v1/types.proto";
+import "runecraftstudios/pastello/game/trivia/v1/rules.proto";
+import "runecraftstudios/pastello/game/puzzle/v1/rules.proto";
+
+option go_package = "github.com/runecraft-studios/pastello/internal/gen/runecraftstudios/pastello/game/session/v1;sessionv1";
+
+// NOTE: GameType/Ids now come from types.v1
+
+message GameSession {
+  runecraftstudios.pastello.game.types.v1.GameSessionId id = 1;
+  runecraftstudios.pastello.game.types.v1.GameType      game_type = 2;
+  repeated runecraftstudios.pastello.game.types.v1.PlayerId player_ids = 3;
+  runecraftstudios.pastello.game.types.v1.SessionStatus status = 4;
+  google.protobuf.Timestamp created_at = 5;
+  string ruleset_id = 6; // optional external reference
+}
+
+message CreateGameSessionRequest {
+  runecraftstudios.pastello.game.types.v1.GameType game_type = 1;
+  repeated runecraftstudios.pastello.game.types.v1.PlayerId player_ids = 2;
+  oneof config {
+    runecraftstudios.pastello.game.trivia.v1.TriviaRules trivia = 10;
+    runecraftstudios.pastello.game.puzzle.v1.PuzzleRules puzzle = 11;
+    string ruleset_id = 12;
+  }
+}
+
+message CreateGameSessionResponse {
+  GameSession session = 1;
+}
