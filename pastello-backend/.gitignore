@@ -1,6 +1,0 @@
-wire_gen.go
-.DS_Store
-internal/gen/
-frontend/src/proto/
-node_modules/
-dist/

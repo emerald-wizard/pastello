@@ -1,4 +1,18 @@
+# general
 .DS_Store
+node_modules/
+dist/
+*.log
+
+# Go
+bin/
+.coverage/
+go.work.sum
+
+# Vite/Web
+apps/web/.vite/
+
+
 # Ignore everything under gen/
 gen/**
 
