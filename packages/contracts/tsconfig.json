@@ -1,0 +1,17 @@
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "ES2020",
+        "declaration": true,
+        "outDir": "dist",
+        "rootDir": ".",
+        "moduleResolution": "Bundler",
+        "verbatimModuleSyntax": true,
+        "importsNotUsedAsValues": "remove",
+        "strict": true
+    },
+    "include": [
+        "src/**/*",
+        "gen/ts/**/*"
+    ]
+}

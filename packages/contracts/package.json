@@ -1,0 +1,27 @@
+{
+  "name": "@runecraft-studios/pastello-contracts",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "sideEffects": false,
+  "files": [
+    "dist/**"
+  ],
+  "exports": {
+    ".": "./dist/index.js",
+    "./web/game/v1/*": "./dist/runecraftstudios/pastello/web/game/v1/*.js",
+    "./common/v1/*": "./dist/runecraftstudios/pastello/common/v1/*.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "gen": "buf generate"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.10.0"
+  }
+}
