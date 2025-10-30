@@ -1,0 +1,31 @@
+syntax = "proto3";
+package runecraftstudios.pastello.game.types.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/runecraft-studios/pastello/internal/gen/runecraftstudios/pastello/game/types/v1;typesv1";
+
+// IDs
+message GameSessionId { string value = 1; }
+message PlayerId      { string value = 1; }
+
+// Enums
+enum GameType {
+  GAME_TYPE_UNSPECIFIED = 0;
+  GAME_TYPE_TRIVIA      = 1;
+  GAME_TYPE_PUZZLE      = 2;
+}
+
+enum SessionStatus {
+  SESSION_STATUS_UNSPECIFIED = 0;
+  SESSION_STATUS_CREATED     = 1;
+  SESSION_STATUS_ACTIVE      = 2;
+  SESSION_STATUS_ENDED       = 3;
+  SESSION_STATUS_CANCELLED   = 4;
+}
+
+// Optional audit helper (use when you need it)
+message Audit {
+  google.protobuf.Timestamp created_at = 1;
+  google.protobuf.Timestamp updated_at = 2;
+}

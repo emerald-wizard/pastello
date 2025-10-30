@@ -1,0 +1,18 @@
+syntax = "proto3";
+package runecraftstudios.pastello.game.trivia.v1;
+
+option go_package = "github.com/runecraft-studios/pastello/internal/gen/runecraftstudios/pastello/game/trivia/v1;triviav1";
+enum TriviaCategory {
+  TRIVIA_CATEGORY_UNSPECIFIED = 0;
+  TRIVIA_CATEGORY_GENERAL_KNOWLEDGE = 1;
+  TRIVIA_CATEGORY_SCIENCE = 2;
+  TRIVIA_CATEGORY_HISTORY = 3;
+}
+
+message TriviaRules {
+  uint32 num_questions = 1;
+  uint32 seconds_per_question = 2;
+  bool negative_marking = 3;
+  repeated TriviaCategory categories = 4;
+  uint32 max_players = 5;
+}

@@ -1,0 +1,13 @@
+| Component / Area              | Risk                       | Mitigation / Controls                                                                          | Responsible Team                      | Severity |
+| ----------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------- | -------- |
+| **Authentication (Login)**    | Unauthorized Access        | JWT Tokens, OAuth2, Multi-factor Authentication (MFA), Strong Password Policy                  | Backend Dev Team, Security Team       | High     |
+| **Authorization**             | Privilege Escalation       | RBAC (Role-based access control), Principle of Least Privilege                                 | Backend Dev Team, Security Team       | High     |
+| **Session Management**        | Session Hijacking          | Secure/HttpOnly cookies, Encrypted Session Tokens, Regular Token Rotation/Expiry               | Backend Dev Team                      | High     |
+| **WebSocket Connections**     | Unauthorized Subscriptions | Token-based authentication for WebSocket connections, Origin Validation                        | Backend/Web Team                      | Medium   |
+| **REST APIs**                 | Injection Attacks          | Input Validation, Sanitization, Rate limiting, Parameterized Queries                           | Backend Dev Team                      | High     |
+| **Data Persistence**          | Data Leakage/Exposure      | Encrypted Data Storage (AES-256), Data Masking, Secure DB Connections, Minimal Data Collection | Backend Dev Team, Infrastructure Team | High     |
+| **Real-time Communication**   | Message Tampering          | TLS/SSL Encryption, Payload Validation, Message Signing (optional)                             | Infrastructure Team                   | Medium   |
+| **Error Handling**            | Information Leakage        | Generic error messages, proper logging without sensitive info exposure                         | Dev Team, QA Team                     | Medium   |
+| **Deployment Infrastructure** | Infrastructure Breach      | Regular Security Updates, Firewalls, Security Group Configurations, VPN/SSH Key Management     | DevOps/Security Team                  | Critical |
+| **Logging/Monitoring**        | Undetected Breach          | Centralized Logging, Intrusion Detection Systems (IDS), Real-time alerts                       | DevOps/Security Team                  | High     |
+| **Third-party Integrations**  | Supply Chain Attacks       | Dependency Vulnerability Scanning, Regular Dependency Updates, Vendor Assessment               | Dev Team, Security Team               | High     |

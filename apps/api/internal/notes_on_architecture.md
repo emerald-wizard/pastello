@@ -1,0 +1,1 @@
+adapters stay thin, UCs do orchestration, engines hold the rules.

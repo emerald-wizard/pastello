@@ -1,0 +1,23 @@
+{
+  "name": "@runecraft-studios/pastello-contracts",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
+    "dev:web": "pnpm --filter ./apps/web dev",
+    "build:web": "pnpm --filter ./apps/web build",
+    "test:web": "pnpm --filter ./apps/web test",
+    "dev:all": "concurrently -k \"pnpm --filter ./apps/web dev\" \"make -C apps/api dev\""
+  },
+  "private": true,
+  "devDependencies": {
+    "typescript": "^9.0.0"
+  }
+}
