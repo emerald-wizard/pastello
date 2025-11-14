@@ -8,12 +8,18 @@ import "runecraftstudios/pastello/game/trivia/v1/rules.proto";
 import "runecraftstudios/pastello/game/puzzle/v1/commands.proto";
 import "runecraftstudios/pastello/game/puzzle/v1/rules.proto";
 
-option go_package = "github.com/runecraft-studios/pastello/internal/gen/runecraftstudios/pastello/web/game/v1;webgamev1";
-
-// Generic error that the edge can show/log.
+// Generic error server can send (edge-safe).
 message ErrorEvent { string code = 1; string message = 2; }
 
-// Start-session request (edge shape)
+// Example extra query result types (add your own as needed)
+message GetSessionStateQuery { string session_id = 1; }
+message SessionStateReply {
+  runecraftstudios.pastello.game.session.v1.GameSession session = 1;
+  repeated int32 board = 2;            // example for puzzle
+  uint64 version = 3;                   // optimistic locking / projection version
+}
+
+// Start-session command (already in your schema)
 message StartGameSessionCommand {
   runecraftstudios.pastello.game.types.v1.GameType game_type = 1;
   repeated runecraftstudios.pastello.game.types.v1.PlayerId player_ids = 2;
@@ -28,25 +34,55 @@ message GameSessionStartedEvent {
   runecraftstudios.pastello.game.session.v1.GameSession session = 1;
 }
 
-// Single envelope that carries both commands and events.
+// Top-level envelope
 message Envelope {
+  // Client sets this; server echoes it in Reply or ErrorEvent.
   string correlation_id = 100;
 
   oneof body {
-    // Commands (client -> server)
-    StartGameSessionCommand                                 start_game_session   = 1;
-    runecraftstudios.pastello.game.trivia.v1.SubmitAnswerCommand trivia_submit_answer = 2;
-    runecraftstudios.pastello.game.trivia.v1.RevealHintCommand  trivia_reveal_hint    = 3;
-    runecraftstudios.pastello.game.puzzle.v1.MovePieceCommand   puzzle_move_piece     = 10;
-    runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommand    puzzle_undo_move      = 11;
+    Command command = 1;   // client -> server (writes)
+    Query   query   = 2;   // client -> server (reads)
+    Reply   reply   = 3;   // server -> client (answers to Query/Command)
+    Event   event   = 4;   // server -> client (push)
+    ErrorEvent error = 199;// server -> client (edge-safe error)
+  }
+}
 
-    // Events (server -> client)
-    GameSessionStartedEvent                                     game_session_started  = 101;
+message Command {
+  oneof kind {
+    StartGameSessionCommand                                      start_game_session   = 1;
+    runecraftstudios.pastello.game.trivia.v1.SubmitAnswerCommand trivia_submit_answer = 2;
+    runecraftstudios.pastello.game.trivia.v1.RevealHintCommand   trivia_reveal_hint   = 3;
+    runecraftstudios.pastello.game.puzzle.v1.MovePieceCommand    puzzle_move_piece    = 10;
+    runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommand     puzzle_undo_move     = 11;
+  }
+}
+
+message Query {
+  oneof kind {
+    GetSessionStateQuery get_session_state = 1;
+    // add more queries here later…
+  }
+}
+
+message Reply {
+  oneof kind {
+    // Command acks
+    GameSessionStartedEvent                                      game_session_started  = 101;
     runecraftstudios.pastello.game.trivia.v1.AnswerAcceptedEvent trivia_answer_accepted = 102;
     runecraftstudios.pastello.game.trivia.v1.HintRevealedEvent   trivia_hint_revealed   = 103;
     runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent     puzzle_piece_moved     = 110;
     runecraftstudios.pastello.game.puzzle.v1.MoveUndoneEvent     puzzle_move_undone     = 111;
 
-    ErrorEvent error = 199;
+    // Query replies
+    SessionStateReply                                            session_state         = 201;
+  }
+}
+
+message Event {
+  oneof kind {
+    // server-push updates, separate from direct replies
+    runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent     puzzle_piece_moved     = 110;
+    // Add presence/clock/announcements etc. here…
   }
 }

@@ -7,10 +7,10 @@
 package gamev1
 
 import (
-	v12 "github.com/runecraft-studios/pastello/packages/contracts/gen/go/runecraftstudios/pastello/game/puzzle/v1"
-	v13 "github.com/runecraft-studios/pastello/packages/contracts/gen/go/runecraftstudios/pastello/game/session/v1"
-	v11 "github.com/runecraft-studios/pastello/packages/contracts/gen/go/runecraftstudios/pastello/game/trivia/v1"
-	v1 "github.com/runecraft-studios/pastello/packages/contracts/gen/go/runecraftstudios/pastello/game/types/v1"
+	v13 "github.com/runecraft-studios/pastello/packages/contracts/gen/go/runecraftstudios/pastello/game/puzzle/v1"
+	v1 "github.com/runecraft-studios/pastello/packages/contracts/gen/go/runecraftstudios/pastello/game/session/v1"
+	v12 "github.com/runecraft-studios/pastello/packages/contracts/gen/go/runecraftstudios/pastello/game/trivia/v1"
+	v11 "github.com/runecraft-studios/pastello/packages/contracts/gen/go/runecraftstudios/pastello/game/types/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -25,7 +25,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Generic error that the edge can show/log.
+// Generic error server can send (edge-safe).
 type ErrorEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Code          string                 `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
@@ -78,11 +78,116 @@ func (x *ErrorEvent) GetMessage() string {
 	return ""
 }
 
-// Start-session request (edge shape)
+// Example extra query result types (add your own as needed)
+type GetSessionStateQuery struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSessionStateQuery) Reset() {
+	*x = GetSessionStateQuery{}
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSessionStateQuery) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSessionStateQuery) ProtoMessage() {}
+
+func (x *GetSessionStateQuery) ProtoReflect() protoreflect.Message {
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSessionStateQuery.ProtoReflect.Descriptor instead.
+func (*GetSessionStateQuery) Descriptor() ([]byte, []int) {
+	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *GetSessionStateQuery) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type SessionStateReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Session       *v1.GameSession        `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	Board         []int32                `protobuf:"varint,2,rep,packed,name=board,proto3" json:"board,omitempty"` // example for puzzle
+	Version       uint64                 `protobuf:"varint,3,opt,name=version,proto3" json:"version,omitempty"`    // optimistic locking / projection version
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionStateReply) Reset() {
+	*x = SessionStateReply{}
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionStateReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionStateReply) ProtoMessage() {}
+
+func (x *SessionStateReply) ProtoReflect() protoreflect.Message {
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionStateReply.ProtoReflect.Descriptor instead.
+func (*SessionStateReply) Descriptor() ([]byte, []int) {
+	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SessionStateReply) GetSession() *v1.GameSession {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
+func (x *SessionStateReply) GetBoard() []int32 {
+	if x != nil {
+		return x.Board
+	}
+	return nil
+}
+
+func (x *SessionStateReply) GetVersion() uint64 {
+	if x != nil {
+		return x.Version
+	}
+	return 0
+}
+
+// Start-session command (already in your schema)
 type StartGameSessionCommand struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
-	GameType  v1.GameType            `protobuf:"varint,1,opt,name=game_type,json=gameType,proto3,enum=runecraftstudios.pastello.game.types.v1.GameType" json:"game_type,omitempty"`
-	PlayerIds []*v1.PlayerId         `protobuf:"bytes,2,rep,name=player_ids,json=playerIds,proto3" json:"player_ids,omitempty"`
+	GameType  v11.GameType           `protobuf:"varint,1,opt,name=game_type,json=gameType,proto3,enum=runecraftstudios.pastello.game.types.v1.GameType" json:"game_type,omitempty"`
+	PlayerIds []*v11.PlayerId        `protobuf:"bytes,2,rep,name=player_ids,json=playerIds,proto3" json:"player_ids,omitempty"`
 	// Types that are valid to be assigned to Config:
 	//
 	//	*StartGameSessionCommand_Trivia
@@ -95,7 +200,7 @@ type StartGameSessionCommand struct {
 
 func (x *StartGameSessionCommand) Reset() {
 	*x = StartGameSessionCommand{}
-	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[1]
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -107,7 +212,7 @@ func (x *StartGameSessionCommand) String() string {
 func (*StartGameSessionCommand) ProtoMessage() {}
 
 func (x *StartGameSessionCommand) ProtoReflect() protoreflect.Message {
-	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[1]
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -120,17 +225,17 @@ func (x *StartGameSessionCommand) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartGameSessionCommand.ProtoReflect.Descriptor instead.
 func (*StartGameSessionCommand) Descriptor() ([]byte, []int) {
-	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{1}
+	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *StartGameSessionCommand) GetGameType() v1.GameType {
+func (x *StartGameSessionCommand) GetGameType() v11.GameType {
 	if x != nil {
 		return x.GameType
 	}
-	return v1.GameType(0)
+	return v11.GameType(0)
 }
 
-func (x *StartGameSessionCommand) GetPlayerIds() []*v1.PlayerId {
+func (x *StartGameSessionCommand) GetPlayerIds() []*v11.PlayerId {
 	if x != nil {
 		return x.PlayerIds
 	}
@@ -144,7 +249,7 @@ func (x *StartGameSessionCommand) GetConfig() isStartGameSessionCommand_Config {
 	return nil
 }
 
-func (x *StartGameSessionCommand) GetTrivia() *v11.TriviaRules {
+func (x *StartGameSessionCommand) GetTrivia() *v12.TriviaRules {
 	if x != nil {
 		if x, ok := x.Config.(*StartGameSessionCommand_Trivia); ok {
 			return x.Trivia
@@ -153,7 +258,7 @@ func (x *StartGameSessionCommand) GetTrivia() *v11.TriviaRules {
 	return nil
 }
 
-func (x *StartGameSessionCommand) GetPuzzle() *v12.PuzzleRules {
+func (x *StartGameSessionCommand) GetPuzzle() *v13.PuzzleRules {
 	if x != nil {
 		if x, ok := x.Config.(*StartGameSessionCommand_Puzzle); ok {
 			return x.Puzzle
@@ -176,11 +281,11 @@ type isStartGameSessionCommand_Config interface {
 }
 
 type StartGameSessionCommand_Trivia struct {
-	Trivia *v11.TriviaRules `protobuf:"bytes,10,opt,name=trivia,proto3,oneof"`
+	Trivia *v12.TriviaRules `protobuf:"bytes,10,opt,name=trivia,proto3,oneof"`
 }
 
 type StartGameSessionCommand_Puzzle struct {
-	Puzzle *v12.PuzzleRules `protobuf:"bytes,11,opt,name=puzzle,proto3,oneof"`
+	Puzzle *v13.PuzzleRules `protobuf:"bytes,11,opt,name=puzzle,proto3,oneof"`
 }
 
 type StartGameSessionCommand_RulesetId struct {
@@ -195,14 +300,14 @@ func (*StartGameSessionCommand_RulesetId) isStartGameSessionCommand_Config() {}
 
 type GameSessionStartedEvent struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Session       *v13.GameSession       `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
+	Session       *v1.GameSession        `protobuf:"bytes,1,opt,name=session,proto3" json:"session,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GameSessionStartedEvent) Reset() {
 	*x = GameSessionStartedEvent{}
-	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[2]
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -214,7 +319,7 @@ func (x *GameSessionStartedEvent) String() string {
 func (*GameSessionStartedEvent) ProtoMessage() {}
 
 func (x *GameSessionStartedEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[2]
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -227,32 +332,27 @@ func (x *GameSessionStartedEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GameSessionStartedEvent.ProtoReflect.Descriptor instead.
 func (*GameSessionStartedEvent) Descriptor() ([]byte, []int) {
-	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{2}
+	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *GameSessionStartedEvent) GetSession() *v13.GameSession {
+func (x *GameSessionStartedEvent) GetSession() *v1.GameSession {
 	if x != nil {
 		return x.Session
 	}
 	return nil
 }
 
-// Single envelope that carries both commands and events.
+// Top-level envelope
 type Envelope struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CorrelationId string                 `protobuf:"bytes,100,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Client sets this; server echoes it in Reply or ErrorEvent.
+	CorrelationId string `protobuf:"bytes,100,opt,name=correlation_id,json=correlationId,proto3" json:"correlation_id,omitempty"`
 	// Types that are valid to be assigned to Body:
 	//
-	//	*Envelope_StartGameSession
-	//	*Envelope_TriviaSubmitAnswer
-	//	*Envelope_TriviaRevealHint
-	//	*Envelope_PuzzleMovePiece
-	//	*Envelope_PuzzleUndoMove
-	//	*Envelope_GameSessionStarted
-	//	*Envelope_TriviaAnswerAccepted
-	//	*Envelope_TriviaHintRevealed
-	//	*Envelope_PuzzlePieceMoved
-	//	*Envelope_PuzzleMoveUndone
+	//	*Envelope_Command
+	//	*Envelope_Query
+	//	*Envelope_Reply
+	//	*Envelope_Event
 	//	*Envelope_Error
 	Body          isEnvelope_Body `protobuf_oneof:"body"`
 	unknownFields protoimpl.UnknownFields
@@ -261,7 +361,7 @@ type Envelope struct {
 
 func (x *Envelope) Reset() {
 	*x = Envelope{}
-	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[3]
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -273,7 +373,7 @@ func (x *Envelope) String() string {
 func (*Envelope) ProtoMessage() {}
 
 func (x *Envelope) ProtoReflect() protoreflect.Message {
-	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[3]
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -286,7 +386,7 @@ func (x *Envelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Envelope.ProtoReflect.Descriptor instead.
 func (*Envelope) Descriptor() ([]byte, []int) {
-	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{3}
+	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Envelope) GetCorrelationId() string {
@@ -303,91 +403,37 @@ func (x *Envelope) GetBody() isEnvelope_Body {
 	return nil
 }
 
-func (x *Envelope) GetStartGameSession() *StartGameSessionCommand {
+func (x *Envelope) GetCommand() *Command {
 	if x != nil {
-		if x, ok := x.Body.(*Envelope_StartGameSession); ok {
-			return x.StartGameSession
+		if x, ok := x.Body.(*Envelope_Command); ok {
+			return x.Command
 		}
 	}
 	return nil
 }
 
-func (x *Envelope) GetTriviaSubmitAnswer() *v11.SubmitAnswerCommand {
+func (x *Envelope) GetQuery() *Query {
 	if x != nil {
-		if x, ok := x.Body.(*Envelope_TriviaSubmitAnswer); ok {
-			return x.TriviaSubmitAnswer
+		if x, ok := x.Body.(*Envelope_Query); ok {
+			return x.Query
 		}
 	}
 	return nil
 }
 
-func (x *Envelope) GetTriviaRevealHint() *v11.RevealHintCommand {
+func (x *Envelope) GetReply() *Reply {
 	if x != nil {
-		if x, ok := x.Body.(*Envelope_TriviaRevealHint); ok {
-			return x.TriviaRevealHint
+		if x, ok := x.Body.(*Envelope_Reply); ok {
+			return x.Reply
 		}
 	}
 	return nil
 }
 
-func (x *Envelope) GetPuzzleMovePiece() *v12.MovePieceCommand {
+func (x *Envelope) GetEvent() *Event {
 	if x != nil {
-		if x, ok := x.Body.(*Envelope_PuzzleMovePiece); ok {
-			return x.PuzzleMovePiece
-		}
-	}
-	return nil
-}
-
-func (x *Envelope) GetPuzzleUndoMove() *v12.UndoMoveCommand {
-	if x != nil {
-		if x, ok := x.Body.(*Envelope_PuzzleUndoMove); ok {
-			return x.PuzzleUndoMove
-		}
-	}
-	return nil
-}
-
-func (x *Envelope) GetGameSessionStarted() *GameSessionStartedEvent {
-	if x != nil {
-		if x, ok := x.Body.(*Envelope_GameSessionStarted); ok {
-			return x.GameSessionStarted
-		}
-	}
-	return nil
-}
-
-func (x *Envelope) GetTriviaAnswerAccepted() *v11.AnswerAcceptedEvent {
-	if x != nil {
-		if x, ok := x.Body.(*Envelope_TriviaAnswerAccepted); ok {
-			return x.TriviaAnswerAccepted
-		}
-	}
-	return nil
-}
-
-func (x *Envelope) GetTriviaHintRevealed() *v11.HintRevealedEvent {
-	if x != nil {
-		if x, ok := x.Body.(*Envelope_TriviaHintRevealed); ok {
-			return x.TriviaHintRevealed
-		}
-	}
-	return nil
-}
-
-func (x *Envelope) GetPuzzlePieceMoved() *v12.PieceMovedEvent {
-	if x != nil {
-		if x, ok := x.Body.(*Envelope_PuzzlePieceMoved); ok {
-			return x.PuzzlePieceMoved
-		}
-	}
-	return nil
-}
-
-func (x *Envelope) GetPuzzleMoveUndone() *v12.MoveUndoneEvent {
-	if x != nil {
-		if x, ok := x.Body.(*Envelope_PuzzleMoveUndone); ok {
-			return x.PuzzleMoveUndone
+		if x, ok := x.Body.(*Envelope_Event); ok {
+			return x.Event
 		}
 	}
 	return nil
@@ -406,73 +452,446 @@ type isEnvelope_Body interface {
 	isEnvelope_Body()
 }
 
-type Envelope_StartGameSession struct {
-	// Commands (client -> server)
-	StartGameSession *StartGameSessionCommand `protobuf:"bytes,1,opt,name=start_game_session,json=startGameSession,proto3,oneof"`
+type Envelope_Command struct {
+	Command *Command `protobuf:"bytes,1,opt,name=command,proto3,oneof"` // client -> server (writes)
 }
 
-type Envelope_TriviaSubmitAnswer struct {
-	TriviaSubmitAnswer *v11.SubmitAnswerCommand `protobuf:"bytes,2,opt,name=trivia_submit_answer,json=triviaSubmitAnswer,proto3,oneof"`
+type Envelope_Query struct {
+	Query *Query `protobuf:"bytes,2,opt,name=query,proto3,oneof"` // client -> server (reads)
 }
 
-type Envelope_TriviaRevealHint struct {
-	TriviaRevealHint *v11.RevealHintCommand `protobuf:"bytes,3,opt,name=trivia_reveal_hint,json=triviaRevealHint,proto3,oneof"`
+type Envelope_Reply struct {
+	Reply *Reply `protobuf:"bytes,3,opt,name=reply,proto3,oneof"` // server -> client (answers to Query/Command)
 }
 
-type Envelope_PuzzleMovePiece struct {
-	PuzzleMovePiece *v12.MovePieceCommand `protobuf:"bytes,10,opt,name=puzzle_move_piece,json=puzzleMovePiece,proto3,oneof"`
-}
-
-type Envelope_PuzzleUndoMove struct {
-	PuzzleUndoMove *v12.UndoMoveCommand `protobuf:"bytes,11,opt,name=puzzle_undo_move,json=puzzleUndoMove,proto3,oneof"`
-}
-
-type Envelope_GameSessionStarted struct {
-	// Events (server -> client)
-	GameSessionStarted *GameSessionStartedEvent `protobuf:"bytes,101,opt,name=game_session_started,json=gameSessionStarted,proto3,oneof"`
-}
-
-type Envelope_TriviaAnswerAccepted struct {
-	TriviaAnswerAccepted *v11.AnswerAcceptedEvent `protobuf:"bytes,102,opt,name=trivia_answer_accepted,json=triviaAnswerAccepted,proto3,oneof"`
-}
-
-type Envelope_TriviaHintRevealed struct {
-	TriviaHintRevealed *v11.HintRevealedEvent `protobuf:"bytes,103,opt,name=trivia_hint_revealed,json=triviaHintRevealed,proto3,oneof"`
-}
-
-type Envelope_PuzzlePieceMoved struct {
-	PuzzlePieceMoved *v12.PieceMovedEvent `protobuf:"bytes,110,opt,name=puzzle_piece_moved,json=puzzlePieceMoved,proto3,oneof"`
-}
-
-type Envelope_PuzzleMoveUndone struct {
-	PuzzleMoveUndone *v12.MoveUndoneEvent `protobuf:"bytes,111,opt,name=puzzle_move_undone,json=puzzleMoveUndone,proto3,oneof"`
+type Envelope_Event struct {
+	Event *Event `protobuf:"bytes,4,opt,name=event,proto3,oneof"` // server -> client (push)
 }
 
 type Envelope_Error struct {
-	Error *ErrorEvent `protobuf:"bytes,199,opt,name=error,proto3,oneof"`
+	Error *ErrorEvent `protobuf:"bytes,199,opt,name=error,proto3,oneof"` // server -> client (edge-safe error)
 }
 
-func (*Envelope_StartGameSession) isEnvelope_Body() {}
+func (*Envelope_Command) isEnvelope_Body() {}
 
-func (*Envelope_TriviaSubmitAnswer) isEnvelope_Body() {}
+func (*Envelope_Query) isEnvelope_Body() {}
 
-func (*Envelope_TriviaRevealHint) isEnvelope_Body() {}
+func (*Envelope_Reply) isEnvelope_Body() {}
 
-func (*Envelope_PuzzleMovePiece) isEnvelope_Body() {}
-
-func (*Envelope_PuzzleUndoMove) isEnvelope_Body() {}
-
-func (*Envelope_GameSessionStarted) isEnvelope_Body() {}
-
-func (*Envelope_TriviaAnswerAccepted) isEnvelope_Body() {}
-
-func (*Envelope_TriviaHintRevealed) isEnvelope_Body() {}
-
-func (*Envelope_PuzzlePieceMoved) isEnvelope_Body() {}
-
-func (*Envelope_PuzzleMoveUndone) isEnvelope_Body() {}
+func (*Envelope_Event) isEnvelope_Body() {}
 
 func (*Envelope_Error) isEnvelope_Body() {}
+
+type Command struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*Command_StartGameSession
+	//	*Command_TriviaSubmitAnswer
+	//	*Command_TriviaRevealHint
+	//	*Command_PuzzleMovePiece
+	//	*Command_PuzzleUndoMove
+	Kind          isCommand_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Command) Reset() {
+	*x = Command{}
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Command) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Command) ProtoMessage() {}
+
+func (x *Command) ProtoReflect() protoreflect.Message {
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Command.ProtoReflect.Descriptor instead.
+func (*Command) Descriptor() ([]byte, []int) {
+	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *Command) GetKind() isCommand_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *Command) GetStartGameSession() *StartGameSessionCommand {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_StartGameSession); ok {
+			return x.StartGameSession
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetTriviaSubmitAnswer() *v12.SubmitAnswerCommand {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_TriviaSubmitAnswer); ok {
+			return x.TriviaSubmitAnswer
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetTriviaRevealHint() *v12.RevealHintCommand {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_TriviaRevealHint); ok {
+			return x.TriviaRevealHint
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetPuzzleMovePiece() *v13.MovePieceCommand {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_PuzzleMovePiece); ok {
+			return x.PuzzleMovePiece
+		}
+	}
+	return nil
+}
+
+func (x *Command) GetPuzzleUndoMove() *v13.UndoMoveCommand {
+	if x != nil {
+		if x, ok := x.Kind.(*Command_PuzzleUndoMove); ok {
+			return x.PuzzleUndoMove
+		}
+	}
+	return nil
+}
+
+type isCommand_Kind interface {
+	isCommand_Kind()
+}
+
+type Command_StartGameSession struct {
+	StartGameSession *StartGameSessionCommand `protobuf:"bytes,1,opt,name=start_game_session,json=startGameSession,proto3,oneof"`
+}
+
+type Command_TriviaSubmitAnswer struct {
+	TriviaSubmitAnswer *v12.SubmitAnswerCommand `protobuf:"bytes,2,opt,name=trivia_submit_answer,json=triviaSubmitAnswer,proto3,oneof"`
+}
+
+type Command_TriviaRevealHint struct {
+	TriviaRevealHint *v12.RevealHintCommand `protobuf:"bytes,3,opt,name=trivia_reveal_hint,json=triviaRevealHint,proto3,oneof"`
+}
+
+type Command_PuzzleMovePiece struct {
+	PuzzleMovePiece *v13.MovePieceCommand `protobuf:"bytes,10,opt,name=puzzle_move_piece,json=puzzleMovePiece,proto3,oneof"`
+}
+
+type Command_PuzzleUndoMove struct {
+	PuzzleUndoMove *v13.UndoMoveCommand `protobuf:"bytes,11,opt,name=puzzle_undo_move,json=puzzleUndoMove,proto3,oneof"`
+}
+
+func (*Command_StartGameSession) isCommand_Kind() {}
+
+func (*Command_TriviaSubmitAnswer) isCommand_Kind() {}
+
+func (*Command_TriviaRevealHint) isCommand_Kind() {}
+
+func (*Command_PuzzleMovePiece) isCommand_Kind() {}
+
+func (*Command_PuzzleUndoMove) isCommand_Kind() {}
+
+type Query struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*Query_GetSessionState
+	Kind          isQuery_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Query) Reset() {
+	*x = Query{}
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Query) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Query) ProtoMessage() {}
+
+func (x *Query) ProtoReflect() protoreflect.Message {
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Query.ProtoReflect.Descriptor instead.
+func (*Query) Descriptor() ([]byte, []int) {
+	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Query) GetKind() isQuery_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *Query) GetGetSessionState() *GetSessionStateQuery {
+	if x != nil {
+		if x, ok := x.Kind.(*Query_GetSessionState); ok {
+			return x.GetSessionState
+		}
+	}
+	return nil
+}
+
+type isQuery_Kind interface {
+	isQuery_Kind()
+}
+
+type Query_GetSessionState struct {
+	GetSessionState *GetSessionStateQuery `protobuf:"bytes,1,opt,name=get_session_state,json=getSessionState,proto3,oneof"` // add more queries here later…
+}
+
+func (*Query_GetSessionState) isQuery_Kind() {}
+
+type Reply struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*Reply_GameSessionStarted
+	//	*Reply_TriviaAnswerAccepted
+	//	*Reply_TriviaHintRevealed
+	//	*Reply_PuzzlePieceMoved
+	//	*Reply_PuzzleMoveUndone
+	//	*Reply_SessionState
+	Kind          isReply_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Reply) Reset() {
+	*x = Reply{}
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Reply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Reply) ProtoMessage() {}
+
+func (x *Reply) ProtoReflect() protoreflect.Message {
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Reply.ProtoReflect.Descriptor instead.
+func (*Reply) Descriptor() ([]byte, []int) {
+	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *Reply) GetKind() isReply_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *Reply) GetGameSessionStarted() *GameSessionStartedEvent {
+	if x != nil {
+		if x, ok := x.Kind.(*Reply_GameSessionStarted); ok {
+			return x.GameSessionStarted
+		}
+	}
+	return nil
+}
+
+func (x *Reply) GetTriviaAnswerAccepted() *v12.AnswerAcceptedEvent {
+	if x != nil {
+		if x, ok := x.Kind.(*Reply_TriviaAnswerAccepted); ok {
+			return x.TriviaAnswerAccepted
+		}
+	}
+	return nil
+}
+
+func (x *Reply) GetTriviaHintRevealed() *v12.HintRevealedEvent {
+	if x != nil {
+		if x, ok := x.Kind.(*Reply_TriviaHintRevealed); ok {
+			return x.TriviaHintRevealed
+		}
+	}
+	return nil
+}
+
+func (x *Reply) GetPuzzlePieceMoved() *v13.PieceMovedEvent {
+	if x != nil {
+		if x, ok := x.Kind.(*Reply_PuzzlePieceMoved); ok {
+			return x.PuzzlePieceMoved
+		}
+	}
+	return nil
+}
+
+func (x *Reply) GetPuzzleMoveUndone() *v13.MoveUndoneEvent {
+	if x != nil {
+		if x, ok := x.Kind.(*Reply_PuzzleMoveUndone); ok {
+			return x.PuzzleMoveUndone
+		}
+	}
+	return nil
+}
+
+func (x *Reply) GetSessionState() *SessionStateReply {
+	if x != nil {
+		if x, ok := x.Kind.(*Reply_SessionState); ok {
+			return x.SessionState
+		}
+	}
+	return nil
+}
+
+type isReply_Kind interface {
+	isReply_Kind()
+}
+
+type Reply_GameSessionStarted struct {
+	// Command acks
+	GameSessionStarted *GameSessionStartedEvent `protobuf:"bytes,101,opt,name=game_session_started,json=gameSessionStarted,proto3,oneof"`
+}
+
+type Reply_TriviaAnswerAccepted struct {
+	TriviaAnswerAccepted *v12.AnswerAcceptedEvent `protobuf:"bytes,102,opt,name=trivia_answer_accepted,json=triviaAnswerAccepted,proto3,oneof"`
+}
+
+type Reply_TriviaHintRevealed struct {
+	TriviaHintRevealed *v12.HintRevealedEvent `protobuf:"bytes,103,opt,name=trivia_hint_revealed,json=triviaHintRevealed,proto3,oneof"`
+}
+
+type Reply_PuzzlePieceMoved struct {
+	PuzzlePieceMoved *v13.PieceMovedEvent `protobuf:"bytes,110,opt,name=puzzle_piece_moved,json=puzzlePieceMoved,proto3,oneof"`
+}
+
+type Reply_PuzzleMoveUndone struct {
+	PuzzleMoveUndone *v13.MoveUndoneEvent `protobuf:"bytes,111,opt,name=puzzle_move_undone,json=puzzleMoveUndone,proto3,oneof"`
+}
+
+type Reply_SessionState struct {
+	// Query replies
+	SessionState *SessionStateReply `protobuf:"bytes,201,opt,name=session_state,json=sessionState,proto3,oneof"`
+}
+
+func (*Reply_GameSessionStarted) isReply_Kind() {}
+
+func (*Reply_TriviaAnswerAccepted) isReply_Kind() {}
+
+func (*Reply_TriviaHintRevealed) isReply_Kind() {}
+
+func (*Reply_PuzzlePieceMoved) isReply_Kind() {}
+
+func (*Reply_PuzzleMoveUndone) isReply_Kind() {}
+
+func (*Reply_SessionState) isReply_Kind() {}
+
+type Event struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Kind:
+	//
+	//	*Event_PuzzlePieceMoved
+	Kind          isEvent_Kind `protobuf_oneof:"kind"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Event) Reset() {
+	*x = Event{}
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Event) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Event) ProtoMessage() {}
+
+func (x *Event) ProtoReflect() protoreflect.Message {
+	mi := &file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Event.ProtoReflect.Descriptor instead.
+func (*Event) Descriptor() ([]byte, []int) {
+	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *Event) GetKind() isEvent_Kind {
+	if x != nil {
+		return x.Kind
+	}
+	return nil
+}
+
+func (x *Event) GetPuzzlePieceMoved() *v13.PieceMovedEvent {
+	if x != nil {
+		if x, ok := x.Kind.(*Event_PuzzlePieceMoved); ok {
+			return x.PuzzlePieceMoved
+		}
+	}
+	return nil
+}
+
+type isEvent_Kind interface {
+	isEvent_Kind()
+}
+
+type Event_PuzzlePieceMoved struct {
+	// server-push updates, separate from direct replies
+	PuzzlePieceMoved *v13.PieceMovedEvent `protobuf:"bytes,110,opt,name=puzzle_piece_moved,json=puzzlePieceMoved,proto3,oneof"` // Add presence/clock/announcements etc. here…
+}
+
+func (*Event_PuzzlePieceMoved) isEvent_Kind() {}
 
 var File_runecraftstudios_pastello_web_game_v1_envelope_proto protoreflect.FileDescriptor
 
@@ -482,7 +901,14 @@ const file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDesc = "" +
 	"\n" +
 	"ErrorEvent\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\x88\x03\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"5\n" +
+	"\x14GetSessionStateQuery\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\x95\x01\n" +
+	"\x11SessionStateReply\x12P\n" +
+	"\asession\x18\x01 \x01(\v26.runecraftstudios.pastello.game.session.v1.GameSessionR\asession\x12\x14\n" +
+	"\x05board\x18\x02 \x03(\x05R\x05board\x12\x18\n" +
+	"\aversion\x18\x03 \x01(\x04R\aversion\"\x88\x03\n" +
 	"\x17StartGameSessionCommand\x12N\n" +
 	"\tgame_type\x18\x01 \x01(\x0e21.runecraftstudios.pastello.game.types.v1.GameTypeR\bgameType\x12P\n" +
 	"\n" +
@@ -494,22 +920,37 @@ const file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDesc = "" +
 	"ruleset_id\x18\f \x01(\tH\x00R\trulesetIdB\b\n" +
 	"\x06config\"k\n" +
 	"\x17GameSessionStartedEvent\x12P\n" +
-	"\asession\x18\x01 \x01(\v26.runecraftstudios.pastello.game.session.v1.GameSessionR\asession\"\xd8\t\n" +
+	"\asession\x18\x01 \x01(\v26.runecraftstudios.pastello.game.session.v1.GameSessionR\asession\"\xa3\x03\n" +
 	"\bEnvelope\x12%\n" +
-	"\x0ecorrelation_id\x18d \x01(\tR\rcorrelationId\x12n\n" +
+	"\x0ecorrelation_id\x18d \x01(\tR\rcorrelationId\x12J\n" +
+	"\acommand\x18\x01 \x01(\v2..runecraftstudios.pastello.web.game.v1.CommandH\x00R\acommand\x12D\n" +
+	"\x05query\x18\x02 \x01(\v2,.runecraftstudios.pastello.web.game.v1.QueryH\x00R\x05query\x12D\n" +
+	"\x05reply\x18\x03 \x01(\v2,.runecraftstudios.pastello.web.game.v1.ReplyH\x00R\x05reply\x12D\n" +
+	"\x05event\x18\x04 \x01(\v2,.runecraftstudios.pastello.web.game.v1.EventH\x00R\x05event\x12J\n" +
+	"\x05error\x18\xc7\x01 \x01(\v21.runecraftstudios.pastello.web.game.v1.ErrorEventH\x00R\x05errorB\x06\n" +
+	"\x04body\"\xb2\x04\n" +
+	"\aCommand\x12n\n" +
 	"\x12start_game_session\x18\x01 \x01(\v2>.runecraftstudios.pastello.web.game.v1.StartGameSessionCommandH\x00R\x10startGameSession\x12q\n" +
 	"\x14trivia_submit_answer\x18\x02 \x01(\v2=.runecraftstudios.pastello.game.trivia.v1.SubmitAnswerCommandH\x00R\x12triviaSubmitAnswer\x12k\n" +
 	"\x12trivia_reveal_hint\x18\x03 \x01(\v2;.runecraftstudios.pastello.game.trivia.v1.RevealHintCommandH\x00R\x10triviaRevealHint\x12h\n" +
 	"\x11puzzle_move_piece\x18\n" +
 	" \x01(\v2:.runecraftstudios.pastello.game.puzzle.v1.MovePieceCommandH\x00R\x0fpuzzleMovePiece\x12e\n" +
-	"\x10puzzle_undo_move\x18\v \x01(\v29.runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommandH\x00R\x0epuzzleUndoMove\x12r\n" +
+	"\x10puzzle_undo_move\x18\v \x01(\v29.runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommandH\x00R\x0epuzzleUndoMoveB\x06\n" +
+	"\x04kind\"z\n" +
+	"\x05Query\x12i\n" +
+	"\x11get_session_state\x18\x01 \x01(\v2;.runecraftstudios.pastello.web.game.v1.GetSessionStateQueryH\x00R\x0fgetSessionStateB\x06\n" +
+	"\x04kind\"\xa3\x05\n" +
+	"\x05Reply\x12r\n" +
 	"\x14game_session_started\x18e \x01(\v2>.runecraftstudios.pastello.web.game.v1.GameSessionStartedEventH\x00R\x12gameSessionStarted\x12u\n" +
 	"\x16trivia_answer_accepted\x18f \x01(\v2=.runecraftstudios.pastello.game.trivia.v1.AnswerAcceptedEventH\x00R\x14triviaAnswerAccepted\x12o\n" +
 	"\x14trivia_hint_revealed\x18g \x01(\v2;.runecraftstudios.pastello.game.trivia.v1.HintRevealedEventH\x00R\x12triviaHintRevealed\x12i\n" +
 	"\x12puzzle_piece_moved\x18n \x01(\v29.runecraftstudios.pastello.game.puzzle.v1.PieceMovedEventH\x00R\x10puzzlePieceMoved\x12i\n" +
-	"\x12puzzle_move_undone\x18o \x01(\v29.runecraftstudios.pastello.game.puzzle.v1.MoveUndoneEventH\x00R\x10puzzleMoveUndone\x12J\n" +
-	"\x05error\x18\xc7\x01 \x01(\v21.runecraftstudios.pastello.web.game.v1.ErrorEventH\x00R\x05errorB\x06\n" +
-	"\x04bodyB\xe1\x02\n" +
+	"\x12puzzle_move_undone\x18o \x01(\v29.runecraftstudios.pastello.game.puzzle.v1.MoveUndoneEventH\x00R\x10puzzleMoveUndone\x12`\n" +
+	"\rsession_state\x18\xc9\x01 \x01(\v28.runecraftstudios.pastello.web.game.v1.SessionStateReplyH\x00R\fsessionStateB\x06\n" +
+	"\x04kind\"z\n" +
+	"\x05Event\x12i\n" +
+	"\x12puzzle_piece_moved\x18n \x01(\v29.runecraftstudios.pastello.game.puzzle.v1.PieceMovedEventH\x00R\x10puzzlePieceMovedB\x06\n" +
+	"\x04kindB\xe1\x02\n" +
 	")com.runecraftstudios.pastello.web.game.v1B\rEnvelopeProtoP\x01Zlgithub.com/runecraft-studios/pastello/packages/contracts/gen/go/runecraftstudios/pastello/web/game/v1;gamev1\xa2\x02\x04RPWG\xaa\x02%Runecraftstudios.Pastello.Web.Game.V1\xca\x02%Runecraftstudios\\Pastello\\Web\\Game\\V1\xe2\x021Runecraftstudios\\Pastello\\Web\\Game\\V1\\GPBMetadata\xea\x02)Runecraftstudios::Pastello::Web::Game::V1b\x06proto3"
 
 var (
@@ -524,48 +965,62 @@ func file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescGZIP() []b
 	return file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDescData
 }
 
-var file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_runecraftstudios_pastello_web_game_v1_envelope_proto_goTypes = []any{
 	(*ErrorEvent)(nil),              // 0: runecraftstudios.pastello.web.game.v1.ErrorEvent
-	(*StartGameSessionCommand)(nil), // 1: runecraftstudios.pastello.web.game.v1.StartGameSessionCommand
-	(*GameSessionStartedEvent)(nil), // 2: runecraftstudios.pastello.web.game.v1.GameSessionStartedEvent
-	(*Envelope)(nil),                // 3: runecraftstudios.pastello.web.game.v1.Envelope
-	(v1.GameType)(0),                // 4: runecraftstudios.pastello.game.types.v1.GameType
-	(*v1.PlayerId)(nil),             // 5: runecraftstudios.pastello.game.types.v1.PlayerId
-	(*v11.TriviaRules)(nil),         // 6: runecraftstudios.pastello.game.trivia.v1.TriviaRules
-	(*v12.PuzzleRules)(nil),         // 7: runecraftstudios.pastello.game.puzzle.v1.PuzzleRules
-	(*v13.GameSession)(nil),         // 8: runecraftstudios.pastello.game.session.v1.GameSession
-	(*v11.SubmitAnswerCommand)(nil), // 9: runecraftstudios.pastello.game.trivia.v1.SubmitAnswerCommand
-	(*v11.RevealHintCommand)(nil),   // 10: runecraftstudios.pastello.game.trivia.v1.RevealHintCommand
-	(*v12.MovePieceCommand)(nil),    // 11: runecraftstudios.pastello.game.puzzle.v1.MovePieceCommand
-	(*v12.UndoMoveCommand)(nil),     // 12: runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommand
-	(*v11.AnswerAcceptedEvent)(nil), // 13: runecraftstudios.pastello.game.trivia.v1.AnswerAcceptedEvent
-	(*v11.HintRevealedEvent)(nil),   // 14: runecraftstudios.pastello.game.trivia.v1.HintRevealedEvent
-	(*v12.PieceMovedEvent)(nil),     // 15: runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent
-	(*v12.MoveUndoneEvent)(nil),     // 16: runecraftstudios.pastello.game.puzzle.v1.MoveUndoneEvent
+	(*GetSessionStateQuery)(nil),    // 1: runecraftstudios.pastello.web.game.v1.GetSessionStateQuery
+	(*SessionStateReply)(nil),       // 2: runecraftstudios.pastello.web.game.v1.SessionStateReply
+	(*StartGameSessionCommand)(nil), // 3: runecraftstudios.pastello.web.game.v1.StartGameSessionCommand
+	(*GameSessionStartedEvent)(nil), // 4: runecraftstudios.pastello.web.game.v1.GameSessionStartedEvent
+	(*Envelope)(nil),                // 5: runecraftstudios.pastello.web.game.v1.Envelope
+	(*Command)(nil),                 // 6: runecraftstudios.pastello.web.game.v1.Command
+	(*Query)(nil),                   // 7: runecraftstudios.pastello.web.game.v1.Query
+	(*Reply)(nil),                   // 8: runecraftstudios.pastello.web.game.v1.Reply
+	(*Event)(nil),                   // 9: runecraftstudios.pastello.web.game.v1.Event
+	(*v1.GameSession)(nil),          // 10: runecraftstudios.pastello.game.session.v1.GameSession
+	(v11.GameType)(0),               // 11: runecraftstudios.pastello.game.types.v1.GameType
+	(*v11.PlayerId)(nil),            // 12: runecraftstudios.pastello.game.types.v1.PlayerId
+	(*v12.TriviaRules)(nil),         // 13: runecraftstudios.pastello.game.trivia.v1.TriviaRules
+	(*v13.PuzzleRules)(nil),         // 14: runecraftstudios.pastello.game.puzzle.v1.PuzzleRules
+	(*v12.SubmitAnswerCommand)(nil), // 15: runecraftstudios.pastello.game.trivia.v1.SubmitAnswerCommand
+	(*v12.RevealHintCommand)(nil),   // 16: runecraftstudios.pastello.game.trivia.v1.RevealHintCommand
+	(*v13.MovePieceCommand)(nil),    // 17: runecraftstudios.pastello.game.puzzle.v1.MovePieceCommand
+	(*v13.UndoMoveCommand)(nil),     // 18: runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommand
+	(*v12.AnswerAcceptedEvent)(nil), // 19: runecraftstudios.pastello.game.trivia.v1.AnswerAcceptedEvent
+	(*v12.HintRevealedEvent)(nil),   // 20: runecraftstudios.pastello.game.trivia.v1.HintRevealedEvent
+	(*v13.PieceMovedEvent)(nil),     // 21: runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent
+	(*v13.MoveUndoneEvent)(nil),     // 22: runecraftstudios.pastello.game.puzzle.v1.MoveUndoneEvent
 }
 var file_runecraftstudios_pastello_web_game_v1_envelope_proto_depIdxs = []int32{
-	4,  // 0: runecraftstudios.pastello.web.game.v1.StartGameSessionCommand.game_type:type_name -> runecraftstudios.pastello.game.types.v1.GameType
-	5,  // 1: runecraftstudios.pastello.web.game.v1.StartGameSessionCommand.player_ids:type_name -> runecraftstudios.pastello.game.types.v1.PlayerId
-	6,  // 2: runecraftstudios.pastello.web.game.v1.StartGameSessionCommand.trivia:type_name -> runecraftstudios.pastello.game.trivia.v1.TriviaRules
-	7,  // 3: runecraftstudios.pastello.web.game.v1.StartGameSessionCommand.puzzle:type_name -> runecraftstudios.pastello.game.puzzle.v1.PuzzleRules
-	8,  // 4: runecraftstudios.pastello.web.game.v1.GameSessionStartedEvent.session:type_name -> runecraftstudios.pastello.game.session.v1.GameSession
-	1,  // 5: runecraftstudios.pastello.web.game.v1.Envelope.start_game_session:type_name -> runecraftstudios.pastello.web.game.v1.StartGameSessionCommand
-	9,  // 6: runecraftstudios.pastello.web.game.v1.Envelope.trivia_submit_answer:type_name -> runecraftstudios.pastello.game.trivia.v1.SubmitAnswerCommand
-	10, // 7: runecraftstudios.pastello.web.game.v1.Envelope.trivia_reveal_hint:type_name -> runecraftstudios.pastello.game.trivia.v1.RevealHintCommand
-	11, // 8: runecraftstudios.pastello.web.game.v1.Envelope.puzzle_move_piece:type_name -> runecraftstudios.pastello.game.puzzle.v1.MovePieceCommand
-	12, // 9: runecraftstudios.pastello.web.game.v1.Envelope.puzzle_undo_move:type_name -> runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommand
-	2,  // 10: runecraftstudios.pastello.web.game.v1.Envelope.game_session_started:type_name -> runecraftstudios.pastello.web.game.v1.GameSessionStartedEvent
-	13, // 11: runecraftstudios.pastello.web.game.v1.Envelope.trivia_answer_accepted:type_name -> runecraftstudios.pastello.game.trivia.v1.AnswerAcceptedEvent
-	14, // 12: runecraftstudios.pastello.web.game.v1.Envelope.trivia_hint_revealed:type_name -> runecraftstudios.pastello.game.trivia.v1.HintRevealedEvent
-	15, // 13: runecraftstudios.pastello.web.game.v1.Envelope.puzzle_piece_moved:type_name -> runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent
-	16, // 14: runecraftstudios.pastello.web.game.v1.Envelope.puzzle_move_undone:type_name -> runecraftstudios.pastello.game.puzzle.v1.MoveUndoneEvent
-	0,  // 15: runecraftstudios.pastello.web.game.v1.Envelope.error:type_name -> runecraftstudios.pastello.web.game.v1.ErrorEvent
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	10, // 0: runecraftstudios.pastello.web.game.v1.SessionStateReply.session:type_name -> runecraftstudios.pastello.game.session.v1.GameSession
+	11, // 1: runecraftstudios.pastello.web.game.v1.StartGameSessionCommand.game_type:type_name -> runecraftstudios.pastello.game.types.v1.GameType
+	12, // 2: runecraftstudios.pastello.web.game.v1.StartGameSessionCommand.player_ids:type_name -> runecraftstudios.pastello.game.types.v1.PlayerId
+	13, // 3: runecraftstudios.pastello.web.game.v1.StartGameSessionCommand.trivia:type_name -> runecraftstudios.pastello.game.trivia.v1.TriviaRules
+	14, // 4: runecraftstudios.pastello.web.game.v1.StartGameSessionCommand.puzzle:type_name -> runecraftstudios.pastello.game.puzzle.v1.PuzzleRules
+	10, // 5: runecraftstudios.pastello.web.game.v1.GameSessionStartedEvent.session:type_name -> runecraftstudios.pastello.game.session.v1.GameSession
+	6,  // 6: runecraftstudios.pastello.web.game.v1.Envelope.command:type_name -> runecraftstudios.pastello.web.game.v1.Command
+	7,  // 7: runecraftstudios.pastello.web.game.v1.Envelope.query:type_name -> runecraftstudios.pastello.web.game.v1.Query
+	8,  // 8: runecraftstudios.pastello.web.game.v1.Envelope.reply:type_name -> runecraftstudios.pastello.web.game.v1.Reply
+	9,  // 9: runecraftstudios.pastello.web.game.v1.Envelope.event:type_name -> runecraftstudios.pastello.web.game.v1.Event
+	0,  // 10: runecraftstudios.pastello.web.game.v1.Envelope.error:type_name -> runecraftstudios.pastello.web.game.v1.ErrorEvent
+	3,  // 11: runecraftstudios.pastello.web.game.v1.Command.start_game_session:type_name -> runecraftstudios.pastello.web.game.v1.StartGameSessionCommand
+	15, // 12: runecraftstudios.pastello.web.game.v1.Command.trivia_submit_answer:type_name -> runecraftstudios.pastello.game.trivia.v1.SubmitAnswerCommand
+	16, // 13: runecraftstudios.pastello.web.game.v1.Command.trivia_reveal_hint:type_name -> runecraftstudios.pastello.game.trivia.v1.RevealHintCommand
+	17, // 14: runecraftstudios.pastello.web.game.v1.Command.puzzle_move_piece:type_name -> runecraftstudios.pastello.game.puzzle.v1.MovePieceCommand
+	18, // 15: runecraftstudios.pastello.web.game.v1.Command.puzzle_undo_move:type_name -> runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommand
+	1,  // 16: runecraftstudios.pastello.web.game.v1.Query.get_session_state:type_name -> runecraftstudios.pastello.web.game.v1.GetSessionStateQuery
+	4,  // 17: runecraftstudios.pastello.web.game.v1.Reply.game_session_started:type_name -> runecraftstudios.pastello.web.game.v1.GameSessionStartedEvent
+	19, // 18: runecraftstudios.pastello.web.game.v1.Reply.trivia_answer_accepted:type_name -> runecraftstudios.pastello.game.trivia.v1.AnswerAcceptedEvent
+	20, // 19: runecraftstudios.pastello.web.game.v1.Reply.trivia_hint_revealed:type_name -> runecraftstudios.pastello.game.trivia.v1.HintRevealedEvent
+	21, // 20: runecraftstudios.pastello.web.game.v1.Reply.puzzle_piece_moved:type_name -> runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent
+	22, // 21: runecraftstudios.pastello.web.game.v1.Reply.puzzle_move_undone:type_name -> runecraftstudios.pastello.game.puzzle.v1.MoveUndoneEvent
+	2,  // 22: runecraftstudios.pastello.web.game.v1.Reply.session_state:type_name -> runecraftstudios.pastello.web.game.v1.SessionStateReply
+	21, // 23: runecraftstudios.pastello.web.game.v1.Event.puzzle_piece_moved:type_name -> runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent
+	24, // [24:24] is the sub-list for method output_type
+	24, // [24:24] is the sub-list for method input_type
+	24, // [24:24] is the sub-list for extension type_name
+	24, // [24:24] is the sub-list for extension extendee
+	0,  // [0:24] is the sub-list for field type_name
 }
 
 func init() { file_runecraftstudios_pastello_web_game_v1_envelope_proto_init() }
@@ -573,23 +1028,38 @@ func file_runecraftstudios_pastello_web_game_v1_envelope_proto_init() {
 	if File_runecraftstudios_pastello_web_game_v1_envelope_proto != nil {
 		return
 	}
-	file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[1].OneofWrappers = []any{
+	file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[3].OneofWrappers = []any{
 		(*StartGameSessionCommand_Trivia)(nil),
 		(*StartGameSessionCommand_Puzzle)(nil),
 		(*StartGameSessionCommand_RulesetId)(nil),
 	}
-	file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[3].OneofWrappers = []any{
-		(*Envelope_StartGameSession)(nil),
-		(*Envelope_TriviaSubmitAnswer)(nil),
-		(*Envelope_TriviaRevealHint)(nil),
-		(*Envelope_PuzzleMovePiece)(nil),
-		(*Envelope_PuzzleUndoMove)(nil),
-		(*Envelope_GameSessionStarted)(nil),
-		(*Envelope_TriviaAnswerAccepted)(nil),
-		(*Envelope_TriviaHintRevealed)(nil),
-		(*Envelope_PuzzlePieceMoved)(nil),
-		(*Envelope_PuzzleMoveUndone)(nil),
+	file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[5].OneofWrappers = []any{
+		(*Envelope_Command)(nil),
+		(*Envelope_Query)(nil),
+		(*Envelope_Reply)(nil),
+		(*Envelope_Event)(nil),
 		(*Envelope_Error)(nil),
+	}
+	file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[6].OneofWrappers = []any{
+		(*Command_StartGameSession)(nil),
+		(*Command_TriviaSubmitAnswer)(nil),
+		(*Command_TriviaRevealHint)(nil),
+		(*Command_PuzzleMovePiece)(nil),
+		(*Command_PuzzleUndoMove)(nil),
+	}
+	file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[7].OneofWrappers = []any{
+		(*Query_GetSessionState)(nil),
+	}
+	file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[8].OneofWrappers = []any{
+		(*Reply_GameSessionStarted)(nil),
+		(*Reply_TriviaAnswerAccepted)(nil),
+		(*Reply_TriviaHintRevealed)(nil),
+		(*Reply_PuzzlePieceMoved)(nil),
+		(*Reply_PuzzleMoveUndone)(nil),
+		(*Reply_SessionState)(nil),
+	}
+	file_runecraftstudios_pastello_web_game_v1_envelope_proto_msgTypes[9].OneofWrappers = []any{
+		(*Event_PuzzlePieceMoved)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -597,7 +1067,7 @@ func file_runecraftstudios_pastello_web_game_v1_envelope_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDesc), len(file_runecraftstudios_pastello_web_game_v1_envelope_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

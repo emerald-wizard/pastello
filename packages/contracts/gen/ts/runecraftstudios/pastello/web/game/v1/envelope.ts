@@ -20,13 +20,28 @@ import { GameType, gameTypeFromJSON, gameTypeToJSON, PlayerId } from "../../../g
 
 export const protobufPackage = "runecraftstudios.pastello.web.game.v1";
 
-/** Generic error that the edge can show/log. */
+/** Generic error server can send (edge-safe). */
 export interface ErrorEvent {
   code: string;
   message: string;
 }
 
-/** Start-session request (edge shape) */
+/** Example extra query result types (add your own as needed) */
+export interface GetSessionStateQuery {
+  sessionId: string;
+}
+
+export interface SessionStateReply {
+  session?:
+    | GameSession
+    | undefined;
+  /** example for puzzle */
+  board: number[];
+  /** optimistic locking / projection version */
+  version: number;
+}
+
+/** Start-session command (already in your schema) */
 export interface StartGameSessionCommand {
   gameType: GameType;
   playerIds: PlayerId[];
@@ -40,25 +55,67 @@ export interface GameSessionStartedEvent {
   session?: GameSession | undefined;
 }
 
-/** Single envelope that carries both commands and events. */
+/** Top-level envelope */
 export interface Envelope {
+  /** Client sets this; server echoes it in Reply or ErrorEvent. */
   correlationId: string;
   body?:
     | //
-    /** Commands (client -> server) */
-    { $case: "startGameSession"; startGameSession: StartGameSessionCommand }
+    /** client -> server (writes) */
+    { $case: "command"; command: Command }
+    | //
+    /** client -> server (reads) */
+    { $case: "query"; query: Query }
+    | //
+    /** server -> client (answers to Query/Command) */
+    { $case: "reply"; reply: Reply }
+    | //
+    /** server -> client (push) */
+    { $case: "event"; event: Event }
+    | //
+    /** server -> client (edge-safe error) */
+    { $case: "error"; error: ErrorEvent }
+    | undefined;
+}
+
+export interface Command {
+  kind?:
+    | { $case: "startGameSession"; startGameSession: StartGameSessionCommand }
     | { $case: "triviaSubmitAnswer"; triviaSubmitAnswer: SubmitAnswerCommand }
     | { $case: "triviaRevealHint"; triviaRevealHint: RevealHintCommand }
     | { $case: "puzzleMovePiece"; puzzleMovePiece: MovePieceCommand }
     | { $case: "puzzleUndoMove"; puzzleUndoMove: UndoMoveCommand }
+    | undefined;
+}
+
+export interface Query {
+  kind?:
     | //
-    /** Events (server -> client) */
+    /** add more queries here later… */
+    { $case: "getSessionState"; getSessionState: GetSessionStateQuery }
+    | undefined;
+}
+
+export interface Reply {
+  kind?:
+    | //
+    /** Command acks */
     { $case: "gameSessionStarted"; gameSessionStarted: GameSessionStartedEvent }
     | { $case: "triviaAnswerAccepted"; triviaAnswerAccepted: AnswerAcceptedEvent }
     | { $case: "triviaHintRevealed"; triviaHintRevealed: HintRevealedEvent }
     | { $case: "puzzlePieceMoved"; puzzlePieceMoved: PieceMovedEvent }
     | { $case: "puzzleMoveUndone"; puzzleMoveUndone: MoveUndoneEvent }
-    | { $case: "error"; error: ErrorEvent }
+    | //
+    /** Query replies */
+    { $case: "sessionState"; sessionState: SessionStateReply }
+    | undefined;
+}
+
+export interface Event {
+  kind?:
+    | //
+    /** server-push updates, separate from direct replies */
+    { $case: "puzzlePieceMoved"; puzzlePieceMoved: PieceMovedEvent }
     | undefined;
 }
 
@@ -134,6 +191,170 @@ export const ErrorEvent: MessageFns<ErrorEvent> = {
     const message = createBaseErrorEvent();
     message.code = object.code ?? "";
     message.message = object.message ?? "";
+    return message;
+  },
+};
+
+function createBaseGetSessionStateQuery(): GetSessionStateQuery {
+  return { sessionId: "" };
+}
+
+export const GetSessionStateQuery: MessageFns<GetSessionStateQuery> = {
+  encode(message: GetSessionStateQuery, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.sessionId !== "") {
+      writer.uint32(10).string(message.sessionId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GetSessionStateQuery {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGetSessionStateQuery();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.sessionId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GetSessionStateQuery {
+    return { sessionId: isSet(object.sessionId) ? globalThis.String(object.sessionId) : "" };
+  },
+
+  toJSON(message: GetSessionStateQuery): unknown {
+    const obj: any = {};
+    if (message.sessionId !== "") {
+      obj.sessionId = message.sessionId;
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<GetSessionStateQuery>): GetSessionStateQuery {
+    return GetSessionStateQuery.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<GetSessionStateQuery>): GetSessionStateQuery {
+    const message = createBaseGetSessionStateQuery();
+    message.sessionId = object.sessionId ?? "";
+    return message;
+  },
+};
+
+function createBaseSessionStateReply(): SessionStateReply {
+  return { session: undefined, board: [], version: 0 };
+}
+
+export const SessionStateReply: MessageFns<SessionStateReply> = {
+  encode(message: SessionStateReply, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.session !== undefined) {
+      GameSession.encode(message.session, writer.uint32(10).fork()).join();
+    }
+    writer.uint32(18).fork();
+    for (const v of message.board) {
+      writer.int32(v);
+    }
+    writer.join();
+    if (message.version !== 0) {
+      writer.uint32(24).uint64(message.version);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SessionStateReply {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSessionStateReply();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.session = GameSession.decode(reader, reader.uint32());
+          continue;
+        }
+        case 2: {
+          if (tag === 16) {
+            message.board.push(reader.int32());
+
+            continue;
+          }
+
+          if (tag === 18) {
+            const end2 = reader.uint32() + reader.pos;
+            while (reader.pos < end2) {
+              message.board.push(reader.int32());
+            }
+
+            continue;
+          }
+
+          break;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.version = longToNumber(reader.uint64());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SessionStateReply {
+    return {
+      session: isSet(object.session) ? GameSession.fromJSON(object.session) : undefined,
+      board: globalThis.Array.isArray(object?.board) ? object.board.map((e: any) => globalThis.Number(e)) : [],
+      version: isSet(object.version) ? globalThis.Number(object.version) : 0,
+    };
+  },
+
+  toJSON(message: SessionStateReply): unknown {
+    const obj: any = {};
+    if (message.session !== undefined) {
+      obj.session = GameSession.toJSON(message.session);
+    }
+    if (message.board?.length) {
+      obj.board = message.board.map((e) => Math.round(e));
+    }
+    if (message.version !== 0) {
+      obj.version = Math.round(message.version);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<SessionStateReply>): SessionStateReply {
+    return SessionStateReply.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<SessionStateReply>): SessionStateReply {
+    const message = createBaseSessionStateReply();
+    message.session = (object.session !== undefined && object.session !== null)
+      ? GameSession.fromPartial(object.session)
+      : undefined;
+    message.board = object.board?.map((e) => e) || [];
+    message.version = object.version ?? 0;
     return message;
   },
 };
@@ -355,35 +576,17 @@ export const Envelope: MessageFns<Envelope> = {
       writer.uint32(802).string(message.correlationId);
     }
     switch (message.body?.$case) {
-      case "startGameSession":
-        StartGameSessionCommand.encode(message.body.startGameSession, writer.uint32(10).fork()).join();
+      case "command":
+        Command.encode(message.body.command, writer.uint32(10).fork()).join();
         break;
-      case "triviaSubmitAnswer":
-        SubmitAnswerCommand.encode(message.body.triviaSubmitAnswer, writer.uint32(18).fork()).join();
+      case "query":
+        Query.encode(message.body.query, writer.uint32(18).fork()).join();
         break;
-      case "triviaRevealHint":
-        RevealHintCommand.encode(message.body.triviaRevealHint, writer.uint32(26).fork()).join();
+      case "reply":
+        Reply.encode(message.body.reply, writer.uint32(26).fork()).join();
         break;
-      case "puzzleMovePiece":
-        MovePieceCommand.encode(message.body.puzzleMovePiece, writer.uint32(82).fork()).join();
-        break;
-      case "puzzleUndoMove":
-        UndoMoveCommand.encode(message.body.puzzleUndoMove, writer.uint32(90).fork()).join();
-        break;
-      case "gameSessionStarted":
-        GameSessionStartedEvent.encode(message.body.gameSessionStarted, writer.uint32(810).fork()).join();
-        break;
-      case "triviaAnswerAccepted":
-        AnswerAcceptedEvent.encode(message.body.triviaAnswerAccepted, writer.uint32(818).fork()).join();
-        break;
-      case "triviaHintRevealed":
-        HintRevealedEvent.encode(message.body.triviaHintRevealed, writer.uint32(826).fork()).join();
-        break;
-      case "puzzlePieceMoved":
-        PieceMovedEvent.encode(message.body.puzzlePieceMoved, writer.uint32(882).fork()).join();
-        break;
-      case "puzzleMoveUndone":
-        MoveUndoneEvent.encode(message.body.puzzleMoveUndone, writer.uint32(890).fork()).join();
+      case "event":
+        Event.encode(message.body.event, writer.uint32(34).fork()).join();
         break;
       case "error":
         ErrorEvent.encode(message.body.error, writer.uint32(1594).fork()).join();
@@ -412,10 +615,7 @@ export const Envelope: MessageFns<Envelope> = {
             break;
           }
 
-          message.body = {
-            $case: "startGameSession",
-            startGameSession: StartGameSessionCommand.decode(reader, reader.uint32()),
-          };
+          message.body = { $case: "command", command: Command.decode(reader, reader.uint32()) };
           continue;
         }
         case 2: {
@@ -423,10 +623,7 @@ export const Envelope: MessageFns<Envelope> = {
             break;
           }
 
-          message.body = {
-            $case: "triviaSubmitAnswer",
-            triviaSubmitAnswer: SubmitAnswerCommand.decode(reader, reader.uint32()),
-          };
+          message.body = { $case: "query", query: Query.decode(reader, reader.uint32()) };
           continue;
         }
         case 3: {
@@ -434,84 +631,15 @@ export const Envelope: MessageFns<Envelope> = {
             break;
           }
 
-          message.body = {
-            $case: "triviaRevealHint",
-            triviaRevealHint: RevealHintCommand.decode(reader, reader.uint32()),
-          };
+          message.body = { $case: "reply", reply: Reply.decode(reader, reader.uint32()) };
           continue;
         }
-        case 10: {
-          if (tag !== 82) {
+        case 4: {
+          if (tag !== 34) {
             break;
           }
 
-          message.body = {
-            $case: "puzzleMovePiece",
-            puzzleMovePiece: MovePieceCommand.decode(reader, reader.uint32()),
-          };
-          continue;
-        }
-        case 11: {
-          if (tag !== 90) {
-            break;
-          }
-
-          message.body = { $case: "puzzleUndoMove", puzzleUndoMove: UndoMoveCommand.decode(reader, reader.uint32()) };
-          continue;
-        }
-        case 101: {
-          if (tag !== 810) {
-            break;
-          }
-
-          message.body = {
-            $case: "gameSessionStarted",
-            gameSessionStarted: GameSessionStartedEvent.decode(reader, reader.uint32()),
-          };
-          continue;
-        }
-        case 102: {
-          if (tag !== 818) {
-            break;
-          }
-
-          message.body = {
-            $case: "triviaAnswerAccepted",
-            triviaAnswerAccepted: AnswerAcceptedEvent.decode(reader, reader.uint32()),
-          };
-          continue;
-        }
-        case 103: {
-          if (tag !== 826) {
-            break;
-          }
-
-          message.body = {
-            $case: "triviaHintRevealed",
-            triviaHintRevealed: HintRevealedEvent.decode(reader, reader.uint32()),
-          };
-          continue;
-        }
-        case 110: {
-          if (tag !== 882) {
-            break;
-          }
-
-          message.body = {
-            $case: "puzzlePieceMoved",
-            puzzlePieceMoved: PieceMovedEvent.decode(reader, reader.uint32()),
-          };
-          continue;
-        }
-        case 111: {
-          if (tag !== 890) {
-            break;
-          }
-
-          message.body = {
-            $case: "puzzleMoveUndone",
-            puzzleMoveUndone: MoveUndoneEvent.decode(reader, reader.uint32()),
-          };
+          message.body = { $case: "event", event: Event.decode(reader, reader.uint32()) };
           continue;
         }
         case 199: {
@@ -534,7 +662,178 @@ export const Envelope: MessageFns<Envelope> = {
   fromJSON(object: any): Envelope {
     return {
       correlationId: isSet(object.correlationId) ? globalThis.String(object.correlationId) : "",
-      body: isSet(object.startGameSession)
+      body: isSet(object.command)
+        ? { $case: "command", command: Command.fromJSON(object.command) }
+        : isSet(object.query)
+        ? { $case: "query", query: Query.fromJSON(object.query) }
+        : isSet(object.reply)
+        ? { $case: "reply", reply: Reply.fromJSON(object.reply) }
+        : isSet(object.event)
+        ? { $case: "event", event: Event.fromJSON(object.event) }
+        : isSet(object.error)
+        ? { $case: "error", error: ErrorEvent.fromJSON(object.error) }
+        : undefined,
+    };
+  },
+
+  toJSON(message: Envelope): unknown {
+    const obj: any = {};
+    if (message.correlationId !== "") {
+      obj.correlationId = message.correlationId;
+    }
+    if (message.body?.$case === "command") {
+      obj.command = Command.toJSON(message.body.command);
+    } else if (message.body?.$case === "query") {
+      obj.query = Query.toJSON(message.body.query);
+    } else if (message.body?.$case === "reply") {
+      obj.reply = Reply.toJSON(message.body.reply);
+    } else if (message.body?.$case === "event") {
+      obj.event = Event.toJSON(message.body.event);
+    } else if (message.body?.$case === "error") {
+      obj.error = ErrorEvent.toJSON(message.body.error);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<Envelope>): Envelope {
+    return Envelope.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<Envelope>): Envelope {
+    const message = createBaseEnvelope();
+    message.correlationId = object.correlationId ?? "";
+    switch (object.body?.$case) {
+      case "command": {
+        if (object.body?.command !== undefined && object.body?.command !== null) {
+          message.body = { $case: "command", command: Command.fromPartial(object.body.command) };
+        }
+        break;
+      }
+      case "query": {
+        if (object.body?.query !== undefined && object.body?.query !== null) {
+          message.body = { $case: "query", query: Query.fromPartial(object.body.query) };
+        }
+        break;
+      }
+      case "reply": {
+        if (object.body?.reply !== undefined && object.body?.reply !== null) {
+          message.body = { $case: "reply", reply: Reply.fromPartial(object.body.reply) };
+        }
+        break;
+      }
+      case "event": {
+        if (object.body?.event !== undefined && object.body?.event !== null) {
+          message.body = { $case: "event", event: Event.fromPartial(object.body.event) };
+        }
+        break;
+      }
+      case "error": {
+        if (object.body?.error !== undefined && object.body?.error !== null) {
+          message.body = { $case: "error", error: ErrorEvent.fromPartial(object.body.error) };
+        }
+        break;
+      }
+    }
+    return message;
+  },
+};
+
+function createBaseCommand(): Command {
+  return { kind: undefined };
+}
+
+export const Command: MessageFns<Command> = {
+  encode(message: Command, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    switch (message.kind?.$case) {
+      case "startGameSession":
+        StartGameSessionCommand.encode(message.kind.startGameSession, writer.uint32(10).fork()).join();
+        break;
+      case "triviaSubmitAnswer":
+        SubmitAnswerCommand.encode(message.kind.triviaSubmitAnswer, writer.uint32(18).fork()).join();
+        break;
+      case "triviaRevealHint":
+        RevealHintCommand.encode(message.kind.triviaRevealHint, writer.uint32(26).fork()).join();
+        break;
+      case "puzzleMovePiece":
+        MovePieceCommand.encode(message.kind.puzzleMovePiece, writer.uint32(82).fork()).join();
+        break;
+      case "puzzleUndoMove":
+        UndoMoveCommand.encode(message.kind.puzzleUndoMove, writer.uint32(90).fork()).join();
+        break;
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Command {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCommand();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.kind = {
+            $case: "startGameSession",
+            startGameSession: StartGameSessionCommand.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.kind = {
+            $case: "triviaSubmitAnswer",
+            triviaSubmitAnswer: SubmitAnswerCommand.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.kind = {
+            $case: "triviaRevealHint",
+            triviaRevealHint: RevealHintCommand.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+        case 10: {
+          if (tag !== 82) {
+            break;
+          }
+
+          message.kind = {
+            $case: "puzzleMovePiece",
+            puzzleMovePiece: MovePieceCommand.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.kind = { $case: "puzzleUndoMove", puzzleUndoMove: UndoMoveCommand.decode(reader, reader.uint32()) };
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): Command {
+    return {
+      kind: isSet(object.startGameSession)
         ? { $case: "startGameSession", startGameSession: StartGameSessionCommand.fromJSON(object.startGameSession) }
         : isSet(object.triviaSubmitAnswer)
         ? { $case: "triviaSubmitAnswer", triviaSubmitAnswer: SubmitAnswerCommand.fromJSON(object.triviaSubmitAnswer) }
@@ -544,7 +843,270 @@ export const Envelope: MessageFns<Envelope> = {
         ? { $case: "puzzleMovePiece", puzzleMovePiece: MovePieceCommand.fromJSON(object.puzzleMovePiece) }
         : isSet(object.puzzleUndoMove)
         ? { $case: "puzzleUndoMove", puzzleUndoMove: UndoMoveCommand.fromJSON(object.puzzleUndoMove) }
-        : isSet(object.gameSessionStarted)
+        : undefined,
+    };
+  },
+
+  toJSON(message: Command): unknown {
+    const obj: any = {};
+    if (message.kind?.$case === "startGameSession") {
+      obj.startGameSession = StartGameSessionCommand.toJSON(message.kind.startGameSession);
+    } else if (message.kind?.$case === "triviaSubmitAnswer") {
+      obj.triviaSubmitAnswer = SubmitAnswerCommand.toJSON(message.kind.triviaSubmitAnswer);
+    } else if (message.kind?.$case === "triviaRevealHint") {
+      obj.triviaRevealHint = RevealHintCommand.toJSON(message.kind.triviaRevealHint);
+    } else if (message.kind?.$case === "puzzleMovePiece") {
+      obj.puzzleMovePiece = MovePieceCommand.toJSON(message.kind.puzzleMovePiece);
+    } else if (message.kind?.$case === "puzzleUndoMove") {
+      obj.puzzleUndoMove = UndoMoveCommand.toJSON(message.kind.puzzleUndoMove);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<Command>): Command {
+    return Command.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<Command>): Command {
+    const message = createBaseCommand();
+    switch (object.kind?.$case) {
+      case "startGameSession": {
+        if (object.kind?.startGameSession !== undefined && object.kind?.startGameSession !== null) {
+          message.kind = {
+            $case: "startGameSession",
+            startGameSession: StartGameSessionCommand.fromPartial(object.kind.startGameSession),
+          };
+        }
+        break;
+      }
+      case "triviaSubmitAnswer": {
+        if (object.kind?.triviaSubmitAnswer !== undefined && object.kind?.triviaSubmitAnswer !== null) {
+          message.kind = {
+            $case: "triviaSubmitAnswer",
+            triviaSubmitAnswer: SubmitAnswerCommand.fromPartial(object.kind.triviaSubmitAnswer),
+          };
+        }
+        break;
+      }
+      case "triviaRevealHint": {
+        if (object.kind?.triviaRevealHint !== undefined && object.kind?.triviaRevealHint !== null) {
+          message.kind = {
+            $case: "triviaRevealHint",
+            triviaRevealHint: RevealHintCommand.fromPartial(object.kind.triviaRevealHint),
+          };
+        }
+        break;
+      }
+      case "puzzleMovePiece": {
+        if (object.kind?.puzzleMovePiece !== undefined && object.kind?.puzzleMovePiece !== null) {
+          message.kind = {
+            $case: "puzzleMovePiece",
+            puzzleMovePiece: MovePieceCommand.fromPartial(object.kind.puzzleMovePiece),
+          };
+        }
+        break;
+      }
+      case "puzzleUndoMove": {
+        if (object.kind?.puzzleUndoMove !== undefined && object.kind?.puzzleUndoMove !== null) {
+          message.kind = {
+            $case: "puzzleUndoMove",
+            puzzleUndoMove: UndoMoveCommand.fromPartial(object.kind.puzzleUndoMove),
+          };
+        }
+        break;
+      }
+    }
+    return message;
+  },
+};
+
+function createBaseQuery(): Query {
+  return { kind: undefined };
+}
+
+export const Query: MessageFns<Query> = {
+  encode(message: Query, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    switch (message.kind?.$case) {
+      case "getSessionState":
+        GetSessionStateQuery.encode(message.kind.getSessionState, writer.uint32(10).fork()).join();
+        break;
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Query {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseQuery();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.kind = {
+            $case: "getSessionState",
+            getSessionState: GetSessionStateQuery.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): Query {
+    return {
+      kind: isSet(object.getSessionState)
+        ? { $case: "getSessionState", getSessionState: GetSessionStateQuery.fromJSON(object.getSessionState) }
+        : undefined,
+    };
+  },
+
+  toJSON(message: Query): unknown {
+    const obj: any = {};
+    if (message.kind?.$case === "getSessionState") {
+      obj.getSessionState = GetSessionStateQuery.toJSON(message.kind.getSessionState);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<Query>): Query {
+    return Query.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<Query>): Query {
+    const message = createBaseQuery();
+    switch (object.kind?.$case) {
+      case "getSessionState": {
+        if (object.kind?.getSessionState !== undefined && object.kind?.getSessionState !== null) {
+          message.kind = {
+            $case: "getSessionState",
+            getSessionState: GetSessionStateQuery.fromPartial(object.kind.getSessionState),
+          };
+        }
+        break;
+      }
+    }
+    return message;
+  },
+};
+
+function createBaseReply(): Reply {
+  return { kind: undefined };
+}
+
+export const Reply: MessageFns<Reply> = {
+  encode(message: Reply, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    switch (message.kind?.$case) {
+      case "gameSessionStarted":
+        GameSessionStartedEvent.encode(message.kind.gameSessionStarted, writer.uint32(810).fork()).join();
+        break;
+      case "triviaAnswerAccepted":
+        AnswerAcceptedEvent.encode(message.kind.triviaAnswerAccepted, writer.uint32(818).fork()).join();
+        break;
+      case "triviaHintRevealed":
+        HintRevealedEvent.encode(message.kind.triviaHintRevealed, writer.uint32(826).fork()).join();
+        break;
+      case "puzzlePieceMoved":
+        PieceMovedEvent.encode(message.kind.puzzlePieceMoved, writer.uint32(882).fork()).join();
+        break;
+      case "puzzleMoveUndone":
+        MoveUndoneEvent.encode(message.kind.puzzleMoveUndone, writer.uint32(890).fork()).join();
+        break;
+      case "sessionState":
+        SessionStateReply.encode(message.kind.sessionState, writer.uint32(1610).fork()).join();
+        break;
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Reply {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseReply();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 101: {
+          if (tag !== 810) {
+            break;
+          }
+
+          message.kind = {
+            $case: "gameSessionStarted",
+            gameSessionStarted: GameSessionStartedEvent.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+        case 102: {
+          if (tag !== 818) {
+            break;
+          }
+
+          message.kind = {
+            $case: "triviaAnswerAccepted",
+            triviaAnswerAccepted: AnswerAcceptedEvent.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+        case 103: {
+          if (tag !== 826) {
+            break;
+          }
+
+          message.kind = {
+            $case: "triviaHintRevealed",
+            triviaHintRevealed: HintRevealedEvent.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+        case 110: {
+          if (tag !== 882) {
+            break;
+          }
+
+          message.kind = {
+            $case: "puzzlePieceMoved",
+            puzzlePieceMoved: PieceMovedEvent.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+        case 111: {
+          if (tag !== 890) {
+            break;
+          }
+
+          message.kind = {
+            $case: "puzzleMoveUndone",
+            puzzleMoveUndone: MoveUndoneEvent.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+        case 201: {
+          if (tag !== 1610) {
+            break;
+          }
+
+          message.kind = { $case: "sessionState", sessionState: SessionStateReply.decode(reader, reader.uint32()) };
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): Reply {
+    return {
+      kind: isSet(object.gameSessionStarted)
         ? {
           $case: "gameSessionStarted",
           gameSessionStarted: GameSessionStartedEvent.fromJSON(object.gameSessionStarted),
@@ -560,143 +1122,164 @@ export const Envelope: MessageFns<Envelope> = {
         ? { $case: "puzzlePieceMoved", puzzlePieceMoved: PieceMovedEvent.fromJSON(object.puzzlePieceMoved) }
         : isSet(object.puzzleMoveUndone)
         ? { $case: "puzzleMoveUndone", puzzleMoveUndone: MoveUndoneEvent.fromJSON(object.puzzleMoveUndone) }
-        : isSet(object.error)
-        ? { $case: "error", error: ErrorEvent.fromJSON(object.error) }
+        : isSet(object.sessionState)
+        ? { $case: "sessionState", sessionState: SessionStateReply.fromJSON(object.sessionState) }
         : undefined,
     };
   },
 
-  toJSON(message: Envelope): unknown {
+  toJSON(message: Reply): unknown {
     const obj: any = {};
-    if (message.correlationId !== "") {
-      obj.correlationId = message.correlationId;
-    }
-    if (message.body?.$case === "startGameSession") {
-      obj.startGameSession = StartGameSessionCommand.toJSON(message.body.startGameSession);
-    } else if (message.body?.$case === "triviaSubmitAnswer") {
-      obj.triviaSubmitAnswer = SubmitAnswerCommand.toJSON(message.body.triviaSubmitAnswer);
-    } else if (message.body?.$case === "triviaRevealHint") {
-      obj.triviaRevealHint = RevealHintCommand.toJSON(message.body.triviaRevealHint);
-    } else if (message.body?.$case === "puzzleMovePiece") {
-      obj.puzzleMovePiece = MovePieceCommand.toJSON(message.body.puzzleMovePiece);
-    } else if (message.body?.$case === "puzzleUndoMove") {
-      obj.puzzleUndoMove = UndoMoveCommand.toJSON(message.body.puzzleUndoMove);
-    } else if (message.body?.$case === "gameSessionStarted") {
-      obj.gameSessionStarted = GameSessionStartedEvent.toJSON(message.body.gameSessionStarted);
-    } else if (message.body?.$case === "triviaAnswerAccepted") {
-      obj.triviaAnswerAccepted = AnswerAcceptedEvent.toJSON(message.body.triviaAnswerAccepted);
-    } else if (message.body?.$case === "triviaHintRevealed") {
-      obj.triviaHintRevealed = HintRevealedEvent.toJSON(message.body.triviaHintRevealed);
-    } else if (message.body?.$case === "puzzlePieceMoved") {
-      obj.puzzlePieceMoved = PieceMovedEvent.toJSON(message.body.puzzlePieceMoved);
-    } else if (message.body?.$case === "puzzleMoveUndone") {
-      obj.puzzleMoveUndone = MoveUndoneEvent.toJSON(message.body.puzzleMoveUndone);
-    } else if (message.body?.$case === "error") {
-      obj.error = ErrorEvent.toJSON(message.body.error);
+    if (message.kind?.$case === "gameSessionStarted") {
+      obj.gameSessionStarted = GameSessionStartedEvent.toJSON(message.kind.gameSessionStarted);
+    } else if (message.kind?.$case === "triviaAnswerAccepted") {
+      obj.triviaAnswerAccepted = AnswerAcceptedEvent.toJSON(message.kind.triviaAnswerAccepted);
+    } else if (message.kind?.$case === "triviaHintRevealed") {
+      obj.triviaHintRevealed = HintRevealedEvent.toJSON(message.kind.triviaHintRevealed);
+    } else if (message.kind?.$case === "puzzlePieceMoved") {
+      obj.puzzlePieceMoved = PieceMovedEvent.toJSON(message.kind.puzzlePieceMoved);
+    } else if (message.kind?.$case === "puzzleMoveUndone") {
+      obj.puzzleMoveUndone = MoveUndoneEvent.toJSON(message.kind.puzzleMoveUndone);
+    } else if (message.kind?.$case === "sessionState") {
+      obj.sessionState = SessionStateReply.toJSON(message.kind.sessionState);
     }
     return obj;
   },
 
-  create(base?: DeepPartial<Envelope>): Envelope {
-    return Envelope.fromPartial(base ?? {});
+  create(base?: DeepPartial<Reply>): Reply {
+    return Reply.fromPartial(base ?? {});
   },
-  fromPartial(object: DeepPartial<Envelope>): Envelope {
-    const message = createBaseEnvelope();
-    message.correlationId = object.correlationId ?? "";
-    switch (object.body?.$case) {
-      case "startGameSession": {
-        if (object.body?.startGameSession !== undefined && object.body?.startGameSession !== null) {
-          message.body = {
-            $case: "startGameSession",
-            startGameSession: StartGameSessionCommand.fromPartial(object.body.startGameSession),
-          };
-        }
-        break;
-      }
-      case "triviaSubmitAnswer": {
-        if (object.body?.triviaSubmitAnswer !== undefined && object.body?.triviaSubmitAnswer !== null) {
-          message.body = {
-            $case: "triviaSubmitAnswer",
-            triviaSubmitAnswer: SubmitAnswerCommand.fromPartial(object.body.triviaSubmitAnswer),
-          };
-        }
-        break;
-      }
-      case "triviaRevealHint": {
-        if (object.body?.triviaRevealHint !== undefined && object.body?.triviaRevealHint !== null) {
-          message.body = {
-            $case: "triviaRevealHint",
-            triviaRevealHint: RevealHintCommand.fromPartial(object.body.triviaRevealHint),
-          };
-        }
-        break;
-      }
-      case "puzzleMovePiece": {
-        if (object.body?.puzzleMovePiece !== undefined && object.body?.puzzleMovePiece !== null) {
-          message.body = {
-            $case: "puzzleMovePiece",
-            puzzleMovePiece: MovePieceCommand.fromPartial(object.body.puzzleMovePiece),
-          };
-        }
-        break;
-      }
-      case "puzzleUndoMove": {
-        if (object.body?.puzzleUndoMove !== undefined && object.body?.puzzleUndoMove !== null) {
-          message.body = {
-            $case: "puzzleUndoMove",
-            puzzleUndoMove: UndoMoveCommand.fromPartial(object.body.puzzleUndoMove),
-          };
-        }
-        break;
-      }
+  fromPartial(object: DeepPartial<Reply>): Reply {
+    const message = createBaseReply();
+    switch (object.kind?.$case) {
       case "gameSessionStarted": {
-        if (object.body?.gameSessionStarted !== undefined && object.body?.gameSessionStarted !== null) {
-          message.body = {
+        if (object.kind?.gameSessionStarted !== undefined && object.kind?.gameSessionStarted !== null) {
+          message.kind = {
             $case: "gameSessionStarted",
-            gameSessionStarted: GameSessionStartedEvent.fromPartial(object.body.gameSessionStarted),
+            gameSessionStarted: GameSessionStartedEvent.fromPartial(object.kind.gameSessionStarted),
           };
         }
         break;
       }
       case "triviaAnswerAccepted": {
-        if (object.body?.triviaAnswerAccepted !== undefined && object.body?.triviaAnswerAccepted !== null) {
-          message.body = {
+        if (object.kind?.triviaAnswerAccepted !== undefined && object.kind?.triviaAnswerAccepted !== null) {
+          message.kind = {
             $case: "triviaAnswerAccepted",
-            triviaAnswerAccepted: AnswerAcceptedEvent.fromPartial(object.body.triviaAnswerAccepted),
+            triviaAnswerAccepted: AnswerAcceptedEvent.fromPartial(object.kind.triviaAnswerAccepted),
           };
         }
         break;
       }
       case "triviaHintRevealed": {
-        if (object.body?.triviaHintRevealed !== undefined && object.body?.triviaHintRevealed !== null) {
-          message.body = {
+        if (object.kind?.triviaHintRevealed !== undefined && object.kind?.triviaHintRevealed !== null) {
+          message.kind = {
             $case: "triviaHintRevealed",
-            triviaHintRevealed: HintRevealedEvent.fromPartial(object.body.triviaHintRevealed),
+            triviaHintRevealed: HintRevealedEvent.fromPartial(object.kind.triviaHintRevealed),
           };
         }
         break;
       }
       case "puzzlePieceMoved": {
-        if (object.body?.puzzlePieceMoved !== undefined && object.body?.puzzlePieceMoved !== null) {
-          message.body = {
+        if (object.kind?.puzzlePieceMoved !== undefined && object.kind?.puzzlePieceMoved !== null) {
+          message.kind = {
             $case: "puzzlePieceMoved",
-            puzzlePieceMoved: PieceMovedEvent.fromPartial(object.body.puzzlePieceMoved),
+            puzzlePieceMoved: PieceMovedEvent.fromPartial(object.kind.puzzlePieceMoved),
           };
         }
         break;
       }
       case "puzzleMoveUndone": {
-        if (object.body?.puzzleMoveUndone !== undefined && object.body?.puzzleMoveUndone !== null) {
-          message.body = {
+        if (object.kind?.puzzleMoveUndone !== undefined && object.kind?.puzzleMoveUndone !== null) {
+          message.kind = {
             $case: "puzzleMoveUndone",
-            puzzleMoveUndone: MoveUndoneEvent.fromPartial(object.body.puzzleMoveUndone),
+            puzzleMoveUndone: MoveUndoneEvent.fromPartial(object.kind.puzzleMoveUndone),
           };
         }
         break;
       }
-      case "error": {
-        if (object.body?.error !== undefined && object.body?.error !== null) {
-          message.body = { $case: "error", error: ErrorEvent.fromPartial(object.body.error) };
+      case "sessionState": {
+        if (object.kind?.sessionState !== undefined && object.kind?.sessionState !== null) {
+          message.kind = {
+            $case: "sessionState",
+            sessionState: SessionStateReply.fromPartial(object.kind.sessionState),
+          };
+        }
+        break;
+      }
+    }
+    return message;
+  },
+};
+
+function createBaseEvent(): Event {
+  return { kind: undefined };
+}
+
+export const Event: MessageFns<Event> = {
+  encode(message: Event, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    switch (message.kind?.$case) {
+      case "puzzlePieceMoved":
+        PieceMovedEvent.encode(message.kind.puzzlePieceMoved, writer.uint32(882).fork()).join();
+        break;
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Event {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseEvent();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 110: {
+          if (tag !== 882) {
+            break;
+          }
+
+          message.kind = {
+            $case: "puzzlePieceMoved",
+            puzzlePieceMoved: PieceMovedEvent.decode(reader, reader.uint32()),
+          };
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): Event {
+    return {
+      kind: isSet(object.puzzlePieceMoved)
+        ? { $case: "puzzlePieceMoved", puzzlePieceMoved: PieceMovedEvent.fromJSON(object.puzzlePieceMoved) }
+        : undefined,
+    };
+  },
+
+  toJSON(message: Event): unknown {
+    const obj: any = {};
+    if (message.kind?.$case === "puzzlePieceMoved") {
+      obj.puzzlePieceMoved = PieceMovedEvent.toJSON(message.kind.puzzlePieceMoved);
+    }
+    return obj;
+  },
+
+  create(base?: DeepPartial<Event>): Event {
+    return Event.fromPartial(base ?? {});
+  },
+  fromPartial(object: DeepPartial<Event>): Event {
+    const message = createBaseEvent();
+    switch (object.kind?.$case) {
+      case "puzzlePieceMoved": {
+        if (object.kind?.puzzlePieceMoved !== undefined && object.kind?.puzzlePieceMoved !== null) {
+          message.kind = {
+            $case: "puzzlePieceMoved",
+            puzzlePieceMoved: PieceMovedEvent.fromPartial(object.kind.puzzlePieceMoved),
+          };
         }
         break;
       }
@@ -713,6 +1296,17 @@ export type DeepPartial<T> = T extends Builtin ? T
   : T extends { $case: string } ? { [K in keyof Omit<T, "$case">]?: DeepPartial<T[K]> } & { $case: T["$case"] }
   : T extends {} ? { [K in keyof T]?: DeepPartial<T[K]> }
   : Partial<T>;
+
+function longToNumber(int64: { toString(): string }): number {
+  const num = globalThis.Number(int64.toString());
+  if (num > globalThis.Number.MAX_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is larger than Number.MAX_SAFE_INTEGER");
+  }
+  if (num < globalThis.Number.MIN_SAFE_INTEGER) {
+    throw new globalThis.Error("Value is smaller than Number.MIN_SAFE_INTEGER");
+  }
+  return num;
+}
 
 function isSet(value: any): boolean {
   return value !== null && value !== undefined;
