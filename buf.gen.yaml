@@ -6,14 +6,14 @@ managed:
       value: github.com/runecraft-studios/pastello/packages/contracts/gen/go
 
 plugins:
-  # Go (already here)
-  - remote: buf.build/protocolbuffers/go
+  # Go
+  - remote: buf.build/protocolbuffers/go:v1.34.1
     out: packages/contracts/gen/go
     opt:
       - paths=source_relative
 
-  # TS (already here)
-  - remote: buf.build/community/stephenh-ts-proto
+  # TypeScript
+  - remote: buf.build/community/stephenh-ts-proto:v1.167.0
     out: packages/contracts/gen/ts
     opt:
       - env=browser
@@ -25,9 +25,6 @@ plugins:
       - snakeToCamel=true
       - outputJsonMethods=true
 
-  # --- RUST PLUGIN (CORRECTED) ---
+  # Rust
   - remote: buf.build/community/neoeinstein-prost
     out: apps/api-rust/src/pb
-    opt:
-      - compile_well_known_types=true
-      # - experimental_allow_proto3_optional  <-- REMOVED

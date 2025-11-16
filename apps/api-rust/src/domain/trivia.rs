@@ -1,4 +1,8 @@
 use crate::domain::game::*;
+// --- FIX: Use correct pb struct names ---
+use crate::pb::runecraftstudios::pastello::game::trivia::v1::{SubmitAnswerCommand, RevealHintCommand};
+// --- FIX: Use correct pb struct name ---
+//use crate::pb::runecraftstudios::pastello::game::types::v1::PlayerId;
 use crate::ports::{Clock, Rng, IDGen};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -17,6 +21,12 @@ impl State {
         Self { scores: HashMap::new(), hints: Vec::new() }
     }
 }
+impl Default for State {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 // --- From rules.go ---
 #[derive(Debug, Clone)]
@@ -25,14 +35,11 @@ pub struct TriviaRules {
 }
 
 // --- From commands.go ---
-#[derive(Debug, Clone)]
-pub struct SubmitAnswer { pub player_id: PlayerID, pub answer: String }
-#[derive(Debug, Clone)]
-pub struct RevealHint;
+// --- FIX: Use correct pb struct names ---
 #[derive(Debug, Clone)]
 pub enum Command {
-    SubmitAnswer(SubmitAnswer),
-    RevealHint(RevealHint),
+    SubmitAnswer(SubmitAnswerCommand),
+    RevealHint(RevealHintCommand),
 }
 
 // --- From events.go ---
@@ -47,7 +54,11 @@ pub struct AnswerAccepted {
 impl DomainEvent for AnswerAccepted {
     fn name(&self) -> &'static str { "trivia.answer_accepted" }
     fn occurred_at(&self) -> DateTime<Utc> { self.meta.at }
-    fn as_any(&self) -> &dyn Any { self }
+    
+    fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
+    
+    // --- FIX: Matched new trait signature ---
+    fn clone_box(&self) -> Box<dyn Any + Send + Sync> { Box::new(self.clone()) }
 }
 
 #[derive(Debug, Clone)]
@@ -59,7 +70,11 @@ pub struct HintRevealed {
 impl DomainEvent for HintRevealed {
     fn name(&self) -> &'static str { "trivia.hint_revealed" }
     fn occurred_at(&self) -> DateTime<Utc> { self.meta.at }
-    fn as_any(&self) -> &dyn Any { self }
+    
+    fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
+    
+    // --- FIX: Matched new trait signature ---
+    fn clone_box(&self) -> Box<dyn Any + Send + Sync> { Box::new(self.clone()) }
 }
 
 // --- From engine.go ---
@@ -92,16 +107,26 @@ impl TriviaEngine {
         }
     }
 
-    fn submit_answer(&mut self, session_id: &GameSessionID, cmd: &SubmitAnswer) -> Vec<Box<dyn DomainEvent>> {
+    // --- FIX: Use correct pb struct name ---
+    fn submit_answer(&mut self, session_id: &GameSessionID, cmd: &SubmitAnswerCommand) -> Vec<Box<dyn DomainEvent>> {
+        // --- FIX: Handle Option<PlayerId> ---
+        let player_id = match &cmd.player_id {
+            Some(id) => id.value.clone(),
+            None => {
+                tracing::warn!("SubmitAnswer command missing player_id");
+                return Vec::new(); // Or return an error
+            }
+        };
+
         const DELTA: i32 = 10; // Logic from Go
-        let current_score = self.state.scores.entry(cmd.player_id.clone()).or_insert(0);
+        let current_score = self.state.scores.entry(player_id.clone()).or_insert(0);
         *current_score += DELTA;
         let total = *current_score;
 
         let evt = AnswerAccepted {
             meta: new_meta(self.deps.clock.as_ref()),
             session_id: session_id.clone(),
-            player_id: cmd.player_id.clone(),
+            player_id,
             delta: DELTA,
             total,
         };
@@ -143,10 +168,3 @@ impl Engine for TriviaEngine {
         Ok((next_session, events))
     }
 }
-
-fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
-fn clone_box(&self) -> Box<dyn DomainEvent> { Box::new(self.clone()) }
-
-// Inside impl DomainEvent for HintRevealed
-fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
-fn clone_box(&self) -> Box<dyn DomainEvent> { Box::new(self.clone()) }

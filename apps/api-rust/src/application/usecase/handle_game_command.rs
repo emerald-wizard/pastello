@@ -1,138 +1,128 @@
-use anyhow::{Result, anyhow, bail};
-use std::sync::Arc;
-use std::any::Any;
-use crate::{
-    domain::{
-        game::{GameSessionID, DomainEvent, GameType, PlayerID},
-        puzzle, trivia,
-    },
-    ports::{GameSessionRepo, EventBus},
-    application::commands::AppCommand,
-    application::services::engine_factory::EngineFactory,
+use crate::application::commands::GameCommand;
+use crate::domain::game::{DomainError, Engine, GameType, Session};
+use crate::pb::runecraftstudios::pastello::game::{
+    puzzle::v1 as puzzle, trivia::v1 as trivia,
 };
+use crate::ports::{EventBus, Repo};
+use std::any::Any;
+use std::sync::Arc;
 
-// --- Input/Output Ports ---
-pub struct HandleGameCommandIn {
-    pub session_id: GameSessionID,
-    pub player_id: PlayerID, // The authenticated user
-    pub command: AppCommand,
-}
-
-#[derive(Debug, Clone)]
-pub enum AppCommandResponse {
-    PuzzlePieceMoved { from_x: i32, from_y: i32, to_x: i32, to_y: i32 },
-    PuzzleMoveUndone,
-    TriviaAnswerAccepted { delta: i32, total: i32 },
-    TriviaHintRevealed { hint: String },
-    NoReply,
-}
-
-pub struct HandleGameCommandOut {
-    pub payload: AppCommandResponse,
-}
-
-// --- Use Case ---
-#[derive(Clone)]
 pub struct HandleGameCommandUseCase {
-    repo: Arc<dyn GameSessionRepo>,
+    repo: Arc<dyn Repo<Session>>,
     bus: Arc<dyn EventBus>,
-    engines: Arc<dyn EngineFactory>,
+    engine: Arc<dyn Engine>,
 }
 
 impl HandleGameCommandUseCase {
     pub fn new(
-        repo: Arc<dyn GameSessionRepo>,
+        repo: Arc<dyn Repo<Session>>,
         bus: Arc<dyn EventBus>,
-        engines: Arc<dyn EngineFactory>,
+        engine: Arc<dyn Engine>,
     ) -> Self {
-        Self { repo, bus, engines }
+        Self { repo, bus, engine }
     }
 
-    pub async fn execute(&self, input: HandleGameCommandIn) -> Result<HandleGameCommandOut> {
-        // 1) Load session
-        let (session, _snapshot) = self.repo.load(&input.session_id).await?
-            .ok_or_else(|| anyhow!("session not found: {}", input.session_id))?;
+    pub async fn execute(
+        &self,
+        input: GameCommand,
+    ) -> Result<(), DomainError> {
+        // 1. Find the session
+        let session = self.repo.find(&input.session_id).await;
+        let mut session = match session {
+            Some(s) => s,
+            None => {
+                tracing::warn!(
+                    "Session not found for command: {}",
+                    &input.session_id
+                );
+                return Err(DomainError::SessionNotFound(
+                    input.session_id.clone(),
+                ));
+            }
+        };
 
-        // 2) AUTHORIZATION (AuthZ) CHECK
-        if !session.player_ids.contains(&input.player_id) {
-            bail!("authorization failed: player {} is not in session {}", input.player_id, input.session_id);
+        // 2. Authorize
+        // --- FIX: Typo player_ids -> players ---
+        if !session.players.contains(&input.player_id) {
+            tracing::warn!(
+                "Player {} not in session {}",
+                &input.player_id,
+                &input.session_id
+            );
+            return Err(DomainError::SessionNotFound(
+                input.session_id.clone(),
+            ));
         }
 
-        if session.game_type == GameType::Unspecified {
-            return Err(anyhow!("session has no game type"));
+        // --- FIX: Removed invalid check ---
+        // `GameType` enum does not have an `Unspecified` variant
+        // if session.game_type == GameType::Unspecified {
+        //     tracing::error!("Session has unspecified game type: {}", &input.session_id);
+        //     return Err(DomainError::WrongEngine);
+        // }
+
+        if session.game_type != self.engine.game_type() {
+            tracing::error!(
+                "Command sent to wrong engine. Session: {:?}, Engine: {:?}",
+                session.game_type,
+                self.engine.game_type()
+            );
+            return Err(DomainError::WrongEngine);
         }
 
-        // 3) Select engine
-        let engine = self.engines.for_type(session.game_type)
-            .ok_or_else(|| anyhow!("no engine for session type: {:?}", session.game_type))?;
+        // 3. Execute
+        let (next_session, events) =
+            self.engine.apply(&session, input.command).await?;
 
-        // 4) Map app command -> engine command
-        let engine_cmd = map_to_engine_cmd(session.game_type, &input.command)
-            .ok_or_else(|| anyhow!("unsupported command for session type"))?;
+        // 4. Save
+        session = next_session;
+        self.repo.save(&session.id, session).await;
 
-        // 5) Apply
-        let (next_session, events) = engine.apply(&session, engine_cmd)
-            .await
-            .map_err(|e| anyhow!(e))?;
-
-        // 6) Persist
-        self.repo.save(&next_session, None).await?;
-
-        // 7) Publish domain events
-        for event in &events {
-            // Downcast to call the trait method
+        // 5. Publish events
+        for event in events {
             let _ = self.bus.publish(event.name(), event.clone_box()).await;
         }
 
-        // 8) Return flattened payload
-        let payload = flatten_events(events);
-        
-        Ok(HandleGameCommandOut { payload })
+        Ok(())
     }
 }
 
-
-// --- Helpers ---
-fn map_to_engine_cmd(game_type: GameType, cmd: &AppCommand) -> Option<Box<dyn Any + Send>> {
+// TODO: This logic should be moved into the `Engine` implementations
+// This is a temporary solution to map from the `Any` type.
+pub fn map_command(
+    game_type: &GameType,
+    cmd: Box<dyn Any + Send>,
+) -> Option<Box<dyn Any + Send>> {
     match game_type {
-        GameType::Puzzle => match cmd {
-            AppCommand::PuzzleMovePiece(c) => Some(Box::new(puzzle::Command::MovePiece(
-                puzzle::MovePiece { from_x: c.from_x, from_y: c.from_y, to_x: c.to_x, to_y: c.to_y }
-            ))),
-            AppCommand::PuzzleUndoMove(_) => Some(Box::new(puzzle::Command::UndoMove(
-                puzzle::UndoMove
-            ))),
-            _ => None,
-        },
-        GameType::Trivia => match cmd {
-            AppCommand::TriviaSubmitAnswer(c) => Some(Box::new(trivia::Command::SubmitAnswer(
-                trivia::SubmitAnswer { player_id: c.player_id.clone(), answer: c.answer.clone() }
-            ))),
-            AppCommand::TriviaRevealHint(_) => Some(Box::new(trivia::Command::RevealHint(
-                trivia::RevealHint
-            ))),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-fn flatten_events(events: Vec<Box<dyn DomainEvent>>) -> AppCommandResponse {
-    if let Some(event) = events.get(0) {
-        if let Some(e) = event.as_any().downcast_ref::<trivia::AnswerAccepted>() {
-            return AppCommandResponse::TriviaAnswerAccepted { delta: e.delta, total: e.total };
+        GameType::Puzzle => {
+            if let Ok(c) = cmd.downcast::<puzzle::MovePieceCommand>() {
+                // --- FIX: Use correct struct name ---
+                Some(Box::new(crate::domain::puzzle::Command::MovePiece(
+                    puzzle::MovePieceCommand { from_x: c.from_x, from_y: c.from_y, to_x: c.to_x, to_y: c.to_y }
+                )))
+            } else if cmd.downcast::<puzzle::UndoMoveCommand>().is_ok() {
+                // --- FIX: Use correct struct name and syntax ---
+                Some(Box::new(crate::domain::puzzle::Command::UndoMove(
+                    puzzle::UndoMoveCommand {}
+                )))
+            } else {
+                None
+            }
         }
-        if let Some(e) = event.as_any().downcast_ref::<trivia::HintRevealed>() {
-            return AppCommandResponse::TriviaHintRevealed { hint: e.hint.clone() };
-        }
-        if let Some(e) = event.as_any().downcast_ref::<puzzle::PieceMoved>() {
-            return AppCommandResponse::PuzzlePieceMoved {
-                from_x: e.from_x, from_y: e.from_y, to_x: e.to_x, to_y: e.to_y
-            };
-        }
-        if event.as_any().downcast_ref::<puzzle::MoveUndone>().is_some() {
-            return AppCommandResponse::PuzzleMoveUndone;
+        GameType::Trivia => {
+            if let Ok(c) = cmd.downcast::<trivia::SubmitAnswerCommand>() {
+                // --- FIX: Use correct struct name ---
+                Some(Box::new(crate::domain::trivia::Command::SubmitAnswer(
+                    trivia::SubmitAnswerCommand { player_id: c.player_id.clone(), answer: c.answer.clone() }
+                )))
+            } else if cmd.downcast::<trivia::RevealHintCommand>().is_ok() {
+                // --- FIX: Use correct struct name and syntax ---
+                Some(Box::new(crate::domain::trivia::Command::RevealHint(
+                    trivia::RevealHintCommand {}
+                )))
+            } else {
+                None
+            }
         }
     }
-    AppCommandResponse::NoReply
 }

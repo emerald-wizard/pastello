@@ -14,7 +14,7 @@ pub struct SessionStartedEvent {
     #[prost(string, tag="2")]
     pub user_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag="3")]
-    pub created_at: ::core::option::Option<super::super::super::super::super::google::protobuf::Timestamp>,
+    pub created_at: ::core::option::Option<::prost_types::Timestamp>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

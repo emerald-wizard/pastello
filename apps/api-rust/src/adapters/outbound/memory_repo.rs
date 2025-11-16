@@ -1,19 +1,20 @@
-use anyhow::Result;
+use crate::ports::Repo;
 use async_trait::async_trait;
 use dashmap::DashMap;
-use std::any::Any;
 use std::sync::Arc;
-use crate::{
-    domain::game::{GameSessionID, Session},
-    ports::GameSessionRepo,
-};
 
-// Use DashMap for a concurrent-safe HashMap
-pub struct MemorySessionRepo {
-    store: Arc<DashMap<GameSessionID, Session>>,
+// --- FIX: Add pub ---
+pub struct MemoryRepo<T>
+where
+    T: Clone + Send + Sync + 'static,
+{
+    store: Arc<DashMap<String, T>>,
 }
 
-impl MemorySessionRepo {
+impl<T> MemoryRepo<T>
+where
+    T: Clone + Send + Sync + 'static,
+{
     pub fn new() -> Self {
         Self {
             store: Arc::new(DashMap::new()),
@@ -21,28 +22,26 @@ impl MemorySessionRepo {
     }
 }
 
+impl<T> Default for MemoryRepo<T>
+where
+    T: Clone + Send + Sync + 'static,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+
 #[async_trait]
-impl GameSessionRepo for MemorySessionRepo {
-    async fn save(
-        &self,
-        session: &Session,
-        _snapshot: Option<Box<dyn Any + Send>>, // Ignored
-    ) -> Result<()> {
-        self.store.insert(session.id.clone(), session.clone());
-        Ok(())
+impl<T> Repo<T> for MemoryRepo<T>
+where
+    T: Clone + Send + Sync + 'static,
+{
+    async fn find(&self, id: &str) -> Option<T> {
+        self.store.get(id).map(|item| item.value().clone())
     }
 
-    async fn load(
-        &self,
-        id: &GameSessionID,
-    ) -> Result<Option<(Session, Option<Box<dyn Any + Send>>)>> {
-        let entry = self.store.get(id);
-        match entry {
-            Some(entry) => {
-                let session = entry.value().clone();
-                Ok(Some((session, None)))
-            }
-            None => Ok(None),
-        }
+    async fn save(&self, id: &str, item: T) {
+        self.store.insert(id.to_string(), item);
     }
 }

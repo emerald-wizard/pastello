@@ -2,17 +2,19 @@
     "compilerOptions": {
         "target": "ES2020",
         "module": "ES2020",
+        "moduleResolution": "node",
         "declaration": true,
-        "outDir": "dist",
-        "rootDir": ".",
-        "moduleResolution": "Bundler",
-        "verbatimModuleSyntax": true,
-        "importsNotUsedAsValues": "remove",
         "strict": true,
-        "baseUrl": ".",
+        "outDir": "dist",
+        "rootDir": "gen/ts", // We only want to compile the generated TS
+        "esModuleInterop": true,
+        "skipLibCheck": true
     },
     "include": [
-        "src/**/*",
-        "gen/ts/**/*"
+        "gen/ts/**/*" // Only include the generated files
+    ],
+    "exclude": [
+        "dist",
+        "node_modules"
     ]
 }

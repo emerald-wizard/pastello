@@ -1,88 +1,150 @@
 syntax = "proto3";
+
 package runecraftstudios.pastello.web.game.v1;
 
-import "runecraftstudios/pastello/game/types/v1/types.proto";
-import "runecraftstudios/pastello/game/session/v1/session.proto";
-import "runecraftstudios/pastello/game/trivia/v1/commands.proto";
-import "runecraftstudios/pastello/game/trivia/v1/rules.proto";
+// Import game-specific commands
 import "runecraftstudios/pastello/game/puzzle/v1/commands.proto";
-import "runecraftstudios/pastello/game/puzzle/v1/rules.proto";
+import "runecraftstudios/pastello/game/trivia/v1/commands.proto";
+// Import shared game types
+import "runecraftstudios/pastello/game/types/v1/types.proto";
 
-// Generic error server can send (edge-safe).
-message ErrorEvent { string code = 1; string message = 2; }
-
-// Example extra query result types (add your own as needed)
-message GetSessionStateQuery { string session_id = 1; }
-message SessionStateReply {
-  runecraftstudios.pastello.game.session.v1.GameSession session = 1;
-  repeated int32 board = 2;            // example for puzzle
-  uint64 version = 3;                   // optimistic locking / projection version
+// ClientEnvelope is the top-level message from the client over WebSocket.
+// The Rust code `ws/mod.rs` expects this structure.
+message ClientEnvelope {
+  oneof message {
+    StartGameCommand start_game = 1;
+    GameCommandEnvelope game_command = 2;
+  }
 }
 
-// Start-session command (already in your schema)
-message StartGameSessionCommand {
+// Sent by the client to initiate a game session.
+// The Rust code `ws/mod.rs` expects this to have a `game_type` field.
+message StartGameCommand {
   runecraftstudios.pastello.game.types.v1.GameType game_type = 1;
-  repeated runecraftstudios.pastello.game.types.v1.PlayerId player_ids = 2;
-  oneof config {
-    runecraftstudios.pastello.game.trivia.v1.TriviaRules trivia = 10;
-    runecraftstudios.pastello.game.puzzle.v1.PuzzleRules puzzle = 11;
-    string ruleset_id = 12;
+}
+
+// GameCommandEnvelope wraps all in-game actions.
+// The Rust code `ws/mod.rs` expects this structure.
+message GameCommandEnvelope {
+  oneof command {
+    runecraftstudios.pastello.game.puzzle.v1.MovePieceCommand puzzle_move = 1;
+    runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommand puzzle_undo = 2;
+    runecraftstudios.pastello.game.trivia.v1.SubmitAnswerCommand trivia_submit = 3;
+    runecraftstudios.pastello.game.trivia.v1.RevealHintCommand trivia_hint = 4;
   }
 }
 
-message GameSessionStartedEvent {
-  runecraftstudios.pastello.game.session.v1.GameSession session = 1;
-}
-
-// Top-level envelope
-message Envelope {
-  // Client sets this; server echoes it in Reply or ErrorEvent.
-  string correlation_id = 100;
-
-  oneof body {
-    Command command = 1;   // client -> server (writes)
-    Query   query   = 2;   // client -> server (reads)
-    Reply   reply   = 3;   // server -> client (answers to Query/Command)
-    Event   event   = 4;   // server -> client (push)
-    ErrorEvent error = 199;// server -> client (edge-safe error)
+// ServerEnvelope is the top-level message from the server to the client.
+// Your Rust code will need this to send events and status updates back.
+message ServerEnvelope {
+  oneof message {
+    // e.g., "AUTH_SUCCESS", "AUTH_FAILED"
+    string auth_status = 1;
+    // e.g., A JSON string of the full game state
+    string game_state = 2;
+    // e.g., "Session not found"
+    string error = 3;
+    // e.g., A specific game event
+    GameEventEnvelope game_event = 4;
   }
 }
 
-message Command {
-  oneof kind {
-    StartGameSessionCommand                                      start_game_session   = 1;
-    runecraftstudios.pastello.game.trivia.v1.SubmitAnswerCommand trivia_submit_answer = 2;
-    runecraftstudios.pastello.game.trivia.v1.RevealHintCommand   trivia_reveal_hint   = 3;
-    runecraftstudios.pastello.game.puzzle.v1.MovePieceCommand    puzzle_move_piece    = 10;
-    runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommand     puzzle_undo_move     = 11;
+// GameEventEnvelope wraps all game-specific events.
+message GameEventEnvelope {
+  oneof event {
+    // Placeholder for puzzle events
+    string puzzle_event = 1;
+    // Placeholder for trivia events
+    string trivia_event = 2;
   }
 }
 
-message Query {
-  oneof kind {
-    GetSessionStateQuery get_session_state = 1;
-    // add more queries here later…
-  }
-}
-
-message Reply {
-  oneof kind {
-    // Command acks
-    GameSessionStartedEvent                                      game_session_started  = 101;
-    runecraftstudios.pastello.game.trivia.v1.AnswerAcceptedEvent trivia_answer_accepted = 102;
-    runecraftstudios.pastello.game.trivia.v1.HintRevealedEvent   trivia_hint_revealed   = 103;
-    runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent     puzzle_piece_moved     = 110;
-    runecraftstudios.pastello.game.puzzle.v1.MoveUndoneEvent     puzzle_move_undone     = 111;
-
-    // Query replies
-    SessionStateReply                                            session_state         = 201;
-  }
-}
-
-message Event {
-  oneof kind {
-    // server-push updates, separate from direct replies
-    runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent     puzzle_piece_moved     = 110;
-    // Add presence/clock/announcements etc. here…
-  }
-}
+//syntax = "proto3";
+//package runecraftstudios.pastello.web.game.v1;
+//
+//import "runecraftstudios/pastello/game/types/v1/types.proto";
+//import "runecraftstudios/pastello/game/session/v1/session.proto";
+//import "runecraftstudios/pastello/game/trivia/v1/commands.proto";
+//import "runecraftstudios/pastello/game/trivia/v1/rules.proto";
+//import "runecraftstudios/pastello/game/puzzle/v1/commands.proto";
+//import "runecraftstudios/pastello/game/puzzle/v1/rules.proto";
+//
+//// Generic error server can send (edge-safe).
+//message ErrorEvent { string code = 1; string message = 2; }
+//
+//// Example extra query result types (add your own as needed)
+//message GetSessionStateQuery { string session_id = 1; }
+//message SessionStateReply {
+//  runecraftstudios.pastello.game.session.v1.GameSession session = 1;
+//  repeated int32 board = 2;            // example for puzzle
+//  uint64 version = 3;                   // optimistic locking / projection version
+//}
+//
+//// Start-session command (already in your schema)
+//message StartGameSessionCommand {
+//  runecraftstudios.pastello.game.types.v1.GameType game_type = 1;
+//  repeated runecraftstudios.pastello.game.types.v1.PlayerId player_ids = 2;
+//  oneof config {
+//    runecraftstudios.pastello.game.trivia.v1.TriviaRules trivia = 10;
+//    runecraftstudios.pastello.game.puzzle.v1.PuzzleRules puzzle = 11;
+//    string ruleset_id = 12;
+//  }
+//}
+//
+//message GameSessionStartedEvent {
+//  runecraftstudios.pastello.game.session.v1.GameSession session = 1;
+//}
+//
+//// Top-level envelope
+//message Envelope {
+//  // Client sets this; server echoes it in Reply or ErrorEvent.
+//  string correlation_id = 100;
+//
+//  oneof body {
+//    Command command = 1;   // client -> server (writes)
+//    Query   query   = 2;   // client -> server (reads)
+//    Reply   reply   = 3;   // server -> client (answers to Query/Command)
+//    Event   event   = 4;   // server -> client (push)
+//    ErrorEvent error = 199;// server -> client (edge-safe error)
+//  }
+//}
+//
+//message Command {
+//  oneof kind {
+//    StartGameSessionCommand                                      start_game_session   = 1;
+//    runecraftstudios.pastello.game.trivia.v1.SubmitAnswerCommand trivia_submit_answer = 2;
+//    runecraftstudios.pastello.game.trivia.v1.RevealHintCommand   trivia_reveal_hint   = 3;
+//    runecraftstudios.pastello.game.puzzle.v1.MovePieceCommand    puzzle_move_piece    = 10;
+//    runecraftstudios.pastello.game.puzzle.v1.UndoMoveCommand     puzzle_undo_move     = 11;
+//  }
+//}
+//
+//message Query {
+//  oneof kind {
+//    GetSessionStateQuery get_session_state = 1;
+//    // add more queries here later…
+//  }
+//}
+//
+//message Reply {
+//  oneof kind {
+//    // Command acks
+//    GameSessionStartedEvent                                      game_session_started  = 101;
+//    runecraftstudios.pastello.game.trivia.v1.AnswerAcceptedEvent trivia_answer_accepted = 102;
+//    runecraftstudios.pastello.game.trivia.v1.HintRevealedEvent   trivia_hint_revealed   = 103;
+//    runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent     puzzle_piece_moved     = 110;
+//    runecraftstudios.pastello.game.puzzle.v1.MoveUndoneEvent     puzzle_move_undone     = 111;
+//
+//    // Query replies
+//    SessionStateReply                                            session_state         = 201;
+//  }
+//}
+//
+//message Event {
+//  oneof kind {
+//    // server-push updates, separate from direct replies
+//    runecraftstudios.pastello.game.puzzle.v1.PieceMovedEvent     puzzle_piece_moved     = 110;
+//    // Add presence/clock/announcements etc. here…
+//  }
+//}
+//

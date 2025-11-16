@@ -1,265 +1,291 @@
+// --- FIX: Make auth module public ---
+pub mod auth;
+
 use axum::{
     extract::{
         ws::{Message, WebSocket},
         State, WebSocketUpgrade,
     },
-    response::IntoResponse,
+    response::Response,
 };
-use prost::Message as ProstMessage;
-use std::sync::Arc;
-use tokio_stream::StreamExt;
-use tracing::{error, info, warn};
+// --- FIX: Add futures_util::SinkExt ---
+use futures_util::SinkExt;
+// --- FIX: Use tokio_stream::StreamExt and alias it ---
+//use tokio_stream::StreamExt as _;
 
-// Import our auth structs
-use crate::adapters::inbound::ws::auth::GameTicketClaims;
-
-// Import all the types we need
+// --- FIX: Import types from crate root ---
 use crate::{
-    main::AppState,
-    pb::web::game::v1 as web,
-    application::{
-        commands::AppCommand,
-        usecase::handle_game_command::AppCommandResponse,
+    // --- FIX: Removed unused application imports ---
+    AppState,
+    // --- FIX: Use full path for pb imports & CORRECT struct names ---
+    pb::runecraftstudios::pastello::{
+        web::game::v1::{
+            ClientEnvelope, 
+            client_envelope::Message as ClientMessage, // <-- FIX: Import oneof
+            game_command_envelope::Command as GameCommandMessage, // <-- FIX: Import oneof
+        },
+        game::{
+            types::v1::{GameType as PbGameType, PlayerId as PbPlayerId},
+            puzzle::v1::{MovePieceCommand, UndoMoveCommand},
+            trivia::v1::{SubmitAnswerCommand, RevealHintCommand},
+        },
     },
-    domain::game::{GameSessionID, GameType, PlayerID},
+    // --- FIX: Import from crate root ---
+    GameCommand, GameService, StartGame,
 };
 
-// Declare the auth.rs file as a submodule
-pub mod auth;
+use crate::{
+    domain::game::{GameSessionID, PlayerID},
+    // --- FIX: Removed unused EventBus import ---
+    // ports::EventBus,
+};
 
-/// Axum entrypoint for handling the WebSocket upgrade request.
+
 pub async fn websocket_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
-) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+) -> Response {
+    ws.on_upgrade(|socket| websocket(socket, state))
 }
 
+async fn websocket(stream: WebSocket, state: AppState) {
+    // --- FIX: Use stream.split() ---
+    let (mut tx, mut rx) = stream.split();
 
-/// Main function to handle a single WebSocket connection.
-async fn handle_socket(mut socket: WebSocket, state: AppState) {
-    info!("WebSocket client connecting...");
+    // --- Authentication Flow ---
+    // 1. Expect a single text message containing the auth token
+    let (user_id, session_id) = loop {
+        // --- FIX: Disambiguate .next() call ---
+        match tokio_stream::StreamExt::next(&mut rx).await {
+            Some(Ok(Message::Text(token))) => {
+                tracing::debug!("Received auth token via WebSocket");
+                
+                // --- FIX: Corrected syntax error (added let/match) ---
+                let auth_result = state.token_validator.validate(&token).await
+                    .map_err(|e| e.to_string()); // Convert errors to string
 
-    // 1. --- AUTHENTICATION STEP ---
-    // The first message MUST be a text message containing the JWT "Game Ticket"
-    let claims = match socket.recv().await {
-        Some(Ok(Message::Text(token))) => {
-            
-            // --- THIS IS OUR NEW DEV MODE BYPASS ---
-            if token.starts_with("DEV::") {
-                info!("Using DEV MODE authentication");
-                let parts: Vec<&str> = token.split("::").collect();
-                if parts.len() == 3 {
-                    // Manually create the claims our app needs
-                    Ok(GameTicketClaims {
-                        sub: parts[1].to_string(), // user_id
-                        sid: parts[2].to_string(), // session_id
-                        // Fill in dummy data for the rest
-                        aud: "dev-mode".to_string(),
-                        iss: "dev-mode".to_string(),
-                        exp: 0, // Not validated in dev mode
-                    })
-                } else {
-                    Err(anyhow::anyhow!("Invalid DEV:: token format"))
+                match auth_result {
+                    Ok(claims) => {
+                        tracing::info!("Auth successful for sub: {}", claims.sub);
+                        tx.send(Message::Text("AUTH_SUCCESS".to_string())).await.ok(); // Send success
+                        break (claims.sub, claims.sid); // Return sub and sid
+                    }
+                    Err(e) => {
+                        tracing::warn!("Auth failed: {}", e);
+                        tx.send(Message::Text("AUTH_FAILED".to_string())).await.ok();
+                        // Close the connection immediately on auth failure
+                        return;
+                    }
                 }
-            } else {
-                // --- This is the normal, secure production path ---
-                info!("Using PRODUCTION authentication (JWKS)");
-                state.token_validator.validate_token(&token).await
             }
-            // --- END OF DEV MODE BYPASS ---
-            
-        }
-        .map_err(|e| e.to_string()) // Convert errors to string for logging
-        {
-            Ok(claims) => {
-                info!(user_id = %claims.sub, session_id = %claims.sid, "Client authenticated");
-                claims
-            },
-            Err(e) => {
-                error!("Authentication failed: {}", e);
-                let err_env = build_error_envelope("auth-fail", "AUTH_ERROR", "Invalid game ticket");
-                let _ = socket.send(Message::Binary(err_env.encode_to_vec())).await;
-                socket.close().await.ok();
+            Some(Ok(Message::Close(_))) => {
+                tracing::info!("Client disconnected before auth");
                 return;
             }
-        },
-        _ => {
-            // (Client failed to send any token)
-            error!("Client failed to send auth token");
-            let err_env = build_error_envelope("auth-fail", "AUTH_REQUIRED", "First message must be auth token");
-            let _ = socket.send(Message::Binary(err_env.encode_to_vec())).await;
-            socket.close().await.ok();
-            return;
+            Some(Err(e)) => {
+                tracing::warn!("WebSocket error during auth: {}", e);
+                return;
+            }
+            None => {
+                tracing::info!("WebSocket stream ended during auth");
+                return;
+            }
+            _ => {
+                // Ignore other message types (Binary, Ping, Pong) during auth
+                tracing::warn!("Received non-text message during auth");
+            }
         }
     };
     
-    // Auth was successful. Store the authenticated IDs.
-    let authenticated_session_id = claims.sid;
-    let authenticated_player_id = claims.sub; 
+    tracing::info!("User {} connected with session {}", user_id, session_id);
 
-    // 2. --- GAME LOOP ---
-    // Now we enter the normal message processing loop.
-    while let Some(msg) = socket.recv().await {
-        let msg = match msg {
-            Ok(Message::Binary(bin)) => bin,
-            Ok(Message::Close(_)) => {
-                info!(session_id = %authenticated_session_id, "Client disconnected");
-                break;
-            }
-            Ok(m) => {
-                warn!(session_id = %authenticated_session_id, "Received non-binary message: {:?}", m);
-                continue;
-            }
-            Err(e) => {
-                error!(session_id = %authenticated_session_id, "WebSocket error: {}", e);
-                break;
-            }
-        };
+    // --- Event Subscription ---
+    // --- FIX: Use correct field name 'bus' ---
+    let mut event_rx = state.bus.subscribe(&format!("session.{}", session_id)).await;
 
-        // 2a. Decode Envelope
-        let env = match web::Envelope::decode(msg.as_slice()) {
-            Ok(env) => env,
-            Err(e) => {
-                error!(session_id = %authenticated_session_id, "Failed to decode envelope: {}", e);
-                continue;
-            }
-        };
+    // --- Bi-directional Communication Loops ---
+    let user_id_clone = user_id.clone();
+    let session_id_clone = session_id.clone();
+    // --- FIX: Use correct field name 'game_service' ---
+    let game_service_clone = state.game_service.clone();
 
-        let correlation_id = env.correlation_id.clone();
-        
-        // 2b. Route
-        let response_payload = route_envelope(
-            &env,
-            &state,
-            &authenticated_session_id,
-            &authenticated_player_id
-        ).await;
-
-        // 2c. Send Reply
-        let reply_envelope = match response_payload {
-            Ok(Some(payload)) => {
-                Some(build_reply_envelope(&correlation_id, payload))
-            }
-            Ok(None) => None, // No reply needed
-            Err(e) => {
-                error!(session_id = %authenticated_session_id, "Handler error: {}", e);
-                Some(build_error_envelope(&correlation_id, "HANDLER_ERROR", &e.to_string()))
-            }
-        };
-        
-        if let Some(reply) = reply_envelope {
-            let mut buf = Vec::new();
-            if reply.encode(&mut buf).is_ok() {
-                if socket.send(Message::Binary(buf)).await.is_err() {
-                    error!(session_id = %authenticated_session_id, "Failed to send reply, client disconnected.");
+    // Task to handle incoming messages (client -> server)
+    let mut rx_task = tokio::spawn(async move {
+        // --- FIX: Disambiguate .next() call ---
+        while let Some(Ok(message)) = tokio_stream::StreamExt::next(&mut rx).await {
+            match message {
+                Message::Text(text) => {
+                    tracing::warn!("Received unexpected text message post-auth: {}", text);
+                }
+                Message::Binary(bin) => {
+                    handle_binary_message(
+                        bin,
+                        &user_id_clone,
+                        &session_id_clone,
+                        game_service_clone.as_ref(),
+                    )
+                    .await;
+                }
+                Message::Ping(data) => {
+                    if tx.send(Message::Pong(data)).await.is_err() {
+                        break; 
+                    }
+                }
+                Message::Close(_) => {
+                    tracing::info!("Client initiated disconnect for user {}", user_id_clone);
                     break;
+                }
+                _ => {}
+            }
+        }
+        tracing::debug!("RX task for user {} ended", user_id_clone);
+    });
+
+    // Task to handle outgoing messages (server -> client)
+    let mut tx_task = tokio::spawn(async move {
+        // --- FIX: Disambiguate .next() call ---
+        while let Some(event) = tokio_stream::StreamExt::next(&mut event_rx).await {
+            // TODO: Translate `Box<dyn Any + Send>` event into a 
+            // Protobuf `web::ServerEnvelope` and send as `Message::Binary`.
+            
+            tracing::info!("Got an event ({:?}), but translation is not implemented", event);
+            let placeholder_msg = "EVENT_RECEIVED_PLACEHOLDER";
+            if tx.send(Message::Text(placeholder_msg.to_string())).await.is_err() {
+                break;
+            }
+        }
+        tracing::debug!("TX task for user {} ended", user_id);
+    });
+
+    // Wait for either task to finish
+    tokio::select! {
+        _ = (&mut rx_task) => {
+            tracing::debug!("RX task finished first. Aborting TX task.");
+            tx_task.abort();
+        }
+        _ = (&mut tx_task) => {
+            tracing::debug!("TX task finished first. Aborting RX task.");
+            rx_task.abort();
+        }
+    }
+
+    tracing::info!("WebSocket connection closed for user {}", user_id);
+}
+
+/// Handles incoming binary messages from the client
+async fn handle_binary_message(
+    bytes: Vec<u8>,
+    user_id: &PlayerID,
+    session_id: &GameSessionID,
+    game_service: &GameService,
+) {
+    use prost::Message as _;
+    // --- FIX: Removed unused pb imports ---
+
+    // 1. Decode the outer envelope
+    // --- FIX: Use correct struct name (no alias) ---
+    match ClientEnvelope::decode(bytes.as_slice()) {
+        Ok(envelope) => {
+            // 2. Determine message type and dispatch
+            match envelope.message {
+                // --- FIX: Use correct oneof name ---
+                Some(ClientMessage::StartGame(start_cmd)) => {
+                    let game_type = match PbGameType::try_from(start_cmd.game_type) {
+                        Ok(PbGameType::Puzzle) => crate::domain::game::GameType::Puzzle,
+                        Ok(PbGameType::Trivia) => crate::domain::game::GameType::Trivia,
+                        _ => {
+                            tracing::warn!("Invalid game type received");
+                            return;
+                        }
+                    };
+                    
+                    let cmd = StartGame {
+                        game_type,
+                        // --- FIX: Use correct PbPlayerId struct ---
+                        player: PbPlayerId {
+                            value: user_id.clone(),
+                        },
+                        session_id: session_id.clone(),
+                    };
+                    
+                    if let Err(e) = game_service.start_game(cmd).await {
+                        tracing::error!("Failed to start game: {}", e);
+                    }
+                }
+                // --- FIX: Use correct oneof name ---
+                Some(ClientMessage::GameCommand(cmd_envelope)) => {
+                    let domain_command: Box<dyn std::any::Any + Send> = {
+                        if let Some(inner) = cmd_envelope.command {
+                            match inner {
+                                // --- Puzzle Commands ---
+                                // --- FIX: Use correct oneof name ---
+                                GameCommandMessage::PuzzleMove(c) => {
+                                    // --- FIX: Use correct struct name & pass session/player ---
+                                    Box::new(crate::domain::puzzle::Command::MovePiece(
+                                        MovePieceCommand {
+                                            session_id: session_id.clone(),
+                                            player_id: Some(PbPlayerId { value: user_id.clone() }),
+                                            from_x: c.from_x, from_y: c.from_y,
+                                            to_x: c.to_x, to_y: c.to_y,
+                                        }
+                                    ))
+                                }
+                                // --- FIX: Use correct oneof name ---
+                                GameCommandMessage::PuzzleUndo(_) => {
+                                    // --- FIX: Use correct struct name & pass session/player ---
+                                    Box::new(crate::domain::puzzle::Command::UndoMove(
+                                        UndoMoveCommand {
+                                            session_id: session_id.clone(),
+                                            player_id: Some(PbPlayerId { value: user_id.clone() }),
+                                        }
+                                    ))
+                                }
+                                
+                                // --- Trivia Commands ---
+                                // --- FIX: Use correct oneof name ---
+                                GameCommandMessage::TriviaSubmit(c) => {
+                                    // --- FIX: Use correct struct name & pass session ---
+                                    Box::new(crate::domain::trivia::Command::SubmitAnswer(
+                                        SubmitAnswerCommand {
+                                            session_id: session_id.clone(),
+                                            player_id: Some(PbPlayerId { value: user_id.clone() }),
+                                            answer: c.answer,
+                                        }
+                                    ))
+                                }
+                                // --- FIX: Use correct oneof name ---
+                                GameCommandMessage::TriviaHint(_) => {
+                                    // --- FIX: Use correct struct name & pass session ---
+                                    Box::new(crate::domain::trivia::Command::RevealHint(
+                                        RevealHintCommand {
+                                            session_id: session_id.clone(),
+                                        }
+                                    ))
+                                }
+                            }
+                        } else {
+                            tracing::warn!("Received empty GameCommand");
+                            return;
+                        }
+                    };
+
+                    let cmd = GameCommand {
+                        session_id: session_id.clone(),
+                        player_id: user_id.clone(),
+                        command: domain_command,
+                    };
+                    
+                    if let Err(e) = game_service.handle_command(cmd).await {
+                        tracing::error!("Failed to handle game command: {}", e);
+                    }
+                }
+                None => {
+                    tracing::warn!("Received empty ClientEnvelope");
                 }
             }
         }
-    }
-    info!(session_id = %authenticated_session_id, "WebSocket connection closed.");
-}
-
-/// Routes an incoming envelope to the correct application service.
-async fn route_envelope(
-    env: &web::Envelope,
-    state: &AppState,
-    session_id: &GameSessionID,
-    player_id: &PlayerID,
-) -> anyhow::Result<Option<AppCommandResponse>> {
-    
-    let app_cmd = to_app_command(env)
-        .ok_or_else(|| anyhow::anyhow!("unhandled or invalid command body"))?;
-
-    // Pass the authenticated IDs and the command to the registry
-    let payload = state.command_registry.handle(
-        session_id.clone(),
-        player_id.clone(),
-        app_cmd
-    ).await?;
-    
-    Ok(Some(payload))
-}
-
-/// Translates a Protobuf envelope body into an internal ApplicationCommand.
-fn to_app_command(env: &web::Envelope) -> Option<AppCommand> {
-    match env.body.as_ref()? {
-        web::envelope::Body::PuzzleMovePiece(c) => Some(AppCommand::PuzzleMovePiece(
-            crate::application::commands::PuzzleMovePiece {
-                from_x: c.from_x,
-                from_y: c.from_y,
-                to_x: c.to_x,
-                to_y: c.to_y,
-            }
-        )),
-        web::envelope::Body::PuzzleUndoMove(_) => Some(AppCommand::PuzzleUndoMove(
-            crate::application::commands::PuzzleUndoMove
-        )),
-        web::envelope::Body::TriviaSubmitAnswer(c) => Some(AppCommand::TriviaSubmitAnswer(
-            crate::application::commands::TriviaSubmitAnswer {
-                // The use case will validate this against the token's player_id
-                player_id: c.player_id.as_ref().map_or("", |id| &id.value).to_string(),
-                answer: c.answer.clone(),
-            }
-        )),
-        web::envelope::Body::TriviaRevealHint(_) => Some(AppCommand::TriviaRevealHint(
-            crate::application::commands::TriviaRevealHint
-        )),
-        // All other message types are ignored
-        _ => None,
-    }
-}
-
-/// Builds a reply envelope from an application response.
-fn build_reply_envelope(corr_id: &str, payload: AppCommandResponse) -> web::Envelope {
-    use crate::pb::game::{puzzle::v1 as puzzle, trivia::v1 as trivia};
-
-    let body = match payload {
-        AppCommandResponse::PuzzlePieceMoved { from_x, from_y, to_x, to_y } => {
-            web::envelope::Body::PuzzlePieceMoved(puzzle::PieceMovedEvent {
-                session_id: None, // We could pass session_id down if needed
-                from_x, from_y, to_x, to_y,
-            })
+        Err(e) => {
+            tracing::warn!("Failed to decode ClientEnvelope: {}", e);
         }
-        AppCommandResponse::PuzzleMoveUndone => {
-            web::envelope::Body::PuzzleMoveUndone(puzzle::MoveUndoneEvent {
-                session_id: None,
-            })
-        }
-        AppCommandResponse::TriviaAnswerAccepted { delta, total } => {
-            web::envelope::Body::TriviaAnswerAccepted(trivia::AnswerAcceptedEvent {
-                session_id: None,
-                player_id: None, // We could pass player_id down if needed
-                delta_score: delta,
-                total_score: total,
-            })
-        }
-        AppCommandResponse::TriviaHintRevealed { hint } => {
-            web::envelope::Body::TriviaHintRevealed(trivia::HintRevealedEvent {
-                session_id: None,
-                hint_text: hint,
-            })
-        }
-        AppCommandResponse::NoReply => return web::Envelope {
-            correlation_id: corr_id.to_string(),
-            body: None,
-        }
-    };
-    
-    web::Envelope {
-        correlation_id: corr_id.to_string(),
-        body: Some(body),
-    }
-}
-
-/// Builds an error envelope.
-fn build_error_envelope(corr_id: &str, code: &str, msg: &str) -> web::Envelope {
-    web::Envelope {
-        correlation_id: corr_id.to_string(),
-        body: Some(web::envelope::Body::Error(web::ErrorEvent {
-            code: code.to_string(),
-            message: msg.to_string(),
-        })),
     }
 }

@@ -26,6 +26,7 @@ enum SessionStatus {
 
 // Optional audit helper (use when you need it)
 message Audit {
-  google.protobuf.Timestamp created_at = 1;
-  google.protobuf.Timestamp updated_at = 2;
+  int32 dummy_slot = 1; // 
+  google.protobuf.Timestamp created_at = 2;
+  google.protobuf.Timestamp updated_at = 3;
 }

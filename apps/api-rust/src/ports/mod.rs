@@ -1,41 +1,35 @@
-use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::any::Any;
-use crate::domain::game::{GameSessionID, Session};
+use tokio_stream::Stream;
 
-/// Replaces internal/ports/repo.go
 #[async_trait]
-pub trait GameSessionRepo: Send + Sync {
-    async fn save(
-        &self,
-        session: &Session,
-        snapshot: Option<Box<dyn Any + Send>>,
-    ) -> Result<()>;
-    
-    async fn load(
-        &self,
-        id: &GameSessionID,
-    ) -> Result<Option<(Session, Option<Box<dyn Any + Send>>)>>;
-}
-
-/// Replaces internal/ports/clock.go
 pub trait Clock: Send + Sync {
     fn now(&self) -> DateTime<Utc>;
 }
 
-/// Replaces internal/ports/eventbus.go
+#[async_trait]
+pub trait Rng: Send + Sync {
+    async fn rand_int(&self, min: i32, max: i32) -> i32;
+}
+
+#[async_trait]
+pub trait IDGen: Send + Sync {
+    async fn new_id(&self) -> String;
+}
+
+#[async_trait]
+// --- FIX: Add pub ---
+pub trait Repo<T: Clone + Send + Sync>: Send + Sync {
+    async fn find(&self, id: &str) -> Option<T>;
+    async fn save(&self, id: &str, item: T);
+}
+
 #[async_trait]
 pub trait EventBus: Send + Sync {
-    async fn publish(&self, topic: &str, payload: Box<dyn Any + Send>) -> Result<()>;
-}
-
-/// Replaces internal/ports/idgen.go
-pub trait IDGen: Send + Sync {
-    fn new_id(&self) -> String;
-}
-
-/// Replaces internal/ports/rng.go
-pub trait Rng: Send + Sync {
-    fn intn(&self, n: i32) -> i32;
+    async fn publish(&self, topic: &str, payload: Box<dyn Any + Send>) -> anyhow::Result<()>;
+    async fn subscribe(
+        &self,
+        topic: &str,
+    ) -> Box<dyn Stream<Item = Box<dyn Any + Send>> + Send + Unpin>;
 }

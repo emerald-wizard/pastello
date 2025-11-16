@@ -17,10 +17,13 @@ pub struct PlayerId {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct Audit {
-    #[prost(message, optional, tag="1")]
-    pub created_at: ::core::option::Option<super::super::super::super::super::google::protobuf::Timestamp>,
+    /// 
+    #[prost(int32, tag="1")]
+    pub dummy_slot: i32,
     #[prost(message, optional, tag="2")]
-    pub updated_at: ::core::option::Option<super::super::super::super::super::google::protobuf::Timestamp>,
+    pub created_at: ::core::option::Option<::prost_types::Timestamp>,
+    #[prost(message, optional, tag="3")]
+    pub updated_at: ::core::option::Option<::prost_types::Timestamp>,
 }
 /// Enums
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]

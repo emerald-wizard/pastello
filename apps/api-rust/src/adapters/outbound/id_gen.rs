@@ -1,14 +1,25 @@
 use crate::ports::IDGen;
+use async_trait::async_trait;
 use uuid::Uuid;
 
-pub struct UuidGen;
+// --- FIX: Add pub ---
+pub struct UuidGenerator;
 
-impl UuidGen {
-    pub fn new() -> Self { Self }
+impl UuidGenerator {
+    pub fn new() -> Self {
+        Self
+    }
 }
 
-impl IDGen for UuidGen {
-    fn new_id(&self) -> String {
+impl Default for UuidGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl IDGen for UuidGenerator {
+    async fn new_id(&self) -> String {
         Uuid::new_v4().to_string()
     }
 }

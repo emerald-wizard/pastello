@@ -1,31 +1,20 @@
-// These are the DTOs that flow from the adapter to the use case.
-// Based on internal/application/commands/types.go
+// --- FIX: Import correct pb struct ---
+use crate::pb::runecraftstudios::pastello::game::types::v1::PlayerId as PbPlayerId;
+use crate::domain::game::{GameSessionID, GameType, PlayerID};
+use std::any::Any;
+use std::fmt::Debug;
 
-// Puzzle
-#[derive(Debug, Clone)]
-pub struct PuzzleMovePiece {
-    pub from_x: i32,
-    pub from_y: i32,
-    pub to_x: i32,
-    pub to_y: i32,
+#[derive(Debug)]
+pub struct StartGame {
+    pub game_type: GameType,
+    // --- FIX: Use correct pb struct ---
+    pub player: PbPlayerId,
+    pub session_id: GameSessionID,
 }
-#[derive(Debug, Clone)]
-pub struct PuzzleUndoMove;
 
-// Trivia
-#[derive(Debug, Clone)]
-pub struct TriviaSubmitAnswer {
-    pub player_id: String,
-    pub answer: String,
-}
-#[derive(Debug, Clone)]
-pub struct TriviaRevealHint;
-
-/// A simple enum to represent any possible application command
-#[derive(Debug, Clone)]
-pub enum AppCommand {
-    PuzzleMovePiece(PuzzleMovePiece),
-    PuzzleUndoMove(PuzzleUndoMove),
-    TriviaSubmitAnswer(TriviaSubmitAnswer),
-    TriviaRevealHint(TriviaRevealHint),
+#[derive(Debug)]
+pub struct GameCommand {
+    pub session_id: GameSessionID,
+    pub player_id: PlayerID,
+    pub command: Box<dyn Any + Send>,
 }

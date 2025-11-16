@@ -1,4 +1,6 @@
 use crate::domain::game::*;
+// --- FIX: Use correct pb struct names ---
+use crate::pb::runecraftstudios::pastello::game::puzzle::v1::{MovePieceCommand, UndoMoveCommand};
 use crate::ports::{Clock, Rng, IDGen};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -32,14 +34,11 @@ pub struct PuzzleRules {
 }
 
 // --- From commands.go ---
-#[derive(Debug, Clone)]
-pub struct MovePiece { pub from_x: i32, pub from_y: i32, pub to_x: i32, pub to_y: i32 }
-#[derive(Debug, Clone)]
-pub struct UndoMove;
+// --- FIX: Use correct pb struct names ---
 #[derive(Debug, Clone)]
 pub enum Command {
-    MovePiece(MovePiece),
-    UndoMove(UndoMove),
+    MovePiece(MovePieceCommand),
+    UndoMove(UndoMoveCommand),
 }
 
 // --- From events.go ---
@@ -53,7 +52,11 @@ pub struct PieceMoved {
 impl DomainEvent for PieceMoved {
     fn name(&self) -> &'static str { "puzzle.piece_moved" }
     fn occurred_at(&self) -> DateTime<Utc> { self.meta.at }
-    fn as_any(&self) -> &dyn Any { self }
+    
+    fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
+    
+    // --- FIX: Matched new trait signature ---
+    fn clone_box(&self) -> Box<dyn Any + Send + Sync> { Box::new(self.clone()) }
 }
 
 #[derive(Debug, Clone)]
@@ -64,7 +67,11 @@ pub struct MoveUndone {
 impl DomainEvent for MoveUndone {
     fn name(&self) -> &'static str { "puzzle.move_undone" }
     fn occurred_at(&self) -> DateTime<Utc> { self.meta.at }
-    fn as_any(&self) -> &dyn Any { self }
+    
+    fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
+    
+    // --- FIX: Matched new trait signature ---
+    fn clone_box(&self) -> Box<dyn Any + Send + Sync> { Box::new(self.clone()) }
 }
 
 // --- From engine.go ---
@@ -76,8 +83,8 @@ pub struct PuzzleEngine {
 #[derive(Clone)]
 pub struct EngineDeps {
     clock: Arc<dyn Clock>,
-    _rng: Arc<dyn Rng>, // Mark as unused if not used yet
-    _id_gen: Arc<dyn IDGen>, // Mark as unused if not used yet
+    _rng: Arc<dyn Rng>, 
+    _id_gen: Arc<dyn IDGen>,
 }
 
 impl std::fmt::Debug for EngineDeps {
@@ -98,7 +105,8 @@ impl PuzzleEngine {
         }
     }
 
-    fn move_piece(&mut self, session_id: &GameSessionID, cmd: &MovePiece) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
+    // --- FIX: Use correct pb struct name ---
+    fn move_piece(&mut self, session_id: &GameSessionID, cmd: &MovePieceCommand) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
         if !self.in_bounds(cmd.from_x, cmd.from_y) || !self.in_bounds(cmd.to_x, cmd.to_y) {
             return Err(DomainError::OutOfBounds);
         }
@@ -157,10 +165,3 @@ impl Engine for PuzzleEngine {
         Ok((next_session, events))
     }
 }
-
-fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
-fn clone_box(&self) -> Box<dyn DomainEvent> { Box::new(self.clone()) }
-
-// Inside impl DomainEvent for MoveUndone
-fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
-fn clone_box(&self) -> Box<dyn DomainEvent> { Box::new(self.clone()) }

@@ -14,7 +14,7 @@ pub struct GameSession {
     #[prost(enumeration="super::super::types::v1::SessionStatus", tag="4")]
     pub status: i32,
     #[prost(message, optional, tag="5")]
-    pub created_at: ::core::option::Option<super::super::super::super::super::google::protobuf::Timestamp>,
+    pub created_at: ::core::option::Option<::prost_types::Timestamp>,
     /// optional external reference
     #[prost(string, tag="6")]
     pub ruleset_id: ::prost::alloc::string::String,
