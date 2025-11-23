@@ -1,20 +1,18 @@
-// --- FIX: Import correct pb struct ---
-use crate::pb::runecraftstudios::pastello::game::types::v1::PlayerId as PbPlayerId;
-use crate::domain::game::{GameSessionID, GameType, PlayerID};
-use std::any::Any;
-use std::fmt::Debug;
+use crate::domain::game::{GameSessionID, GameType};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
-pub struct StartGame {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StartGameSessionCommand {
+    // FIX: Use String instead of the non-serializable Protobuf struct.
+    pub player_id: String, 
     pub game_type: GameType,
-    // --- FIX: Use correct pb struct ---
-    pub player: PbPlayerId,
-    pub session_id: GameSessionID,
 }
 
-#[derive(Debug)]
-pub struct GameCommand {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GameCommandMessage {
     pub session_id: GameSessionID,
-    pub player_id: PlayerID,
-    pub command: Box<dyn Any + Send>,
+    pub r#type: String,
+    pub payload: serde_json::Value,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub player_id: String,
 }

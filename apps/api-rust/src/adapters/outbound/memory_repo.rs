@@ -1,47 +1,33 @@
-use crate::ports::Repo;
+// FIX: Corrected trait import name from Repo to GameRepository (E0432)
+use crate::ports::GameRepository; 
+use crate::domain::game::{Session, GameSessionID};
+use anyhow::Result;
 use async_trait::async_trait;
 use dashmap::DashMap;
-use std::sync::Arc;
 
-// --- FIX: Add pub ---
-pub struct MemoryRepo<T>
-where
-    T: Clone + Send + Sync + 'static,
-{
-    store: Arc<DashMap<String, T>>,
+#[derive(Debug, Clone)]
+pub struct MemoryRepo {
+    sessions: DashMap<GameSessionID, Session>,
 }
 
-impl<T> MemoryRepo<T>
-where
-    T: Clone + Send + Sync + 'static,
-{
+impl MemoryRepo {
     pub fn new() -> Self {
         Self {
-            store: Arc::new(DashMap::new()),
+            sessions: DashMap::new(),
         }
     }
 }
 
-impl<T> Default for MemoryRepo<T>
-where
-    T: Clone + Send + Sync + 'static,
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-
 #[async_trait]
-impl<T> Repo<T> for MemoryRepo<T>
-where
-    T: Clone + Send + Sync + 'static,
-{
-    async fn find(&self, id: &str) -> Option<T> {
-        self.store.get(id).map(|item| item.value().clone())
+impl GameRepository for MemoryRepo {
+    async fn get(&self, id: &str) -> Result<Option<Session>> {
+        let id = id.to_string();
+        Ok(self.sessions.get(&id).map(|entry| entry.clone()))
     }
 
-    async fn save(&self, id: &str, item: T) {
-        self.store.insert(id.to_string(), item);
+    async fn save(&self, id: &str, session: Session) -> Result<()> {
+        let id = id.to_string();
+        self.sessions.insert(id, session);
+        Ok(())
     }
 }

@@ -1,31 +1,35 @@
 use crate::ports::Rng;
 use async_trait::async_trait;
-// --- FIX: Import the Rng trait from the rand crate to get .gen_range() ---
-use rand::Rng as RandRng;
+use rand::Rng as _; 
 
-pub struct ThreadRng;
+#[derive(Debug, Clone, Copy)]
+pub struct SystemRng;
 
-impl ThreadRng {
+impl SystemRng {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl Default for ThreadRng {
+impl Default for SystemRng {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[async_trait]
-impl Rng for ThreadRng {
-    // --- FIX: Implement the 'rand_int' method from the trait ---
+impl Rng for SystemRng {
     async fn rand_int(&self, min: i32, max: i32) -> i32 {
-        if min >= max {
-            // Guard against panic if min >= max
-            return min;
-        }
-        // Use the rand crate's thread_rng to generate the number
-        rand::thread_rng().gen_range(min..max)
+        tokio::task::spawn_blocking(move || {
+            // Use random_range to fix deprecation in newer rand versions, 
+            // or fallback to gen_range on the thread_rng().
+            let mut rng = rand::thread_rng();
+            rng.gen_range(min..max)
+        })
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("Blocking task for rand_int panicked: {:?}", e);
+            min
+        })
     }
 }

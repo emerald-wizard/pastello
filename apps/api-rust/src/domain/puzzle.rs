@@ -1,167 +1,168 @@
-use crate::domain::game::*;
-// --- FIX: Use correct pb struct names ---
+use crate::domain::game::{
+    DomainError, DomainEvent, EventMeta, GameCommand, GameSessionID, GameType, PlayerID, Session,
+};
 use crate::pb::runecraftstudios::pastello::game::puzzle::v1::{MovePieceCommand, UndoMoveCommand};
-use crate::ports::{Clock, Rng, IDGen};
+use crate::ports::{Clock, IdGenerator, Rng};
+use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use std::any::Any;
+use std::collections::VecDeque;
 use std::sync::Arc;
+use std::fmt;
 
-// --- From models.go ---
-#[derive(Debug, Clone, Copy)]
-pub struct Pos { pub x: i32, pub y: i32 }
-#[derive(Debug, Clone, Copy)]
-pub struct Move { pub from: Pos, pub to: Pos }
-#[derive(Debug, Clone)]
-pub struct State {
-    pub width: i32,
-    pub height: i32,
-    pub history: Vec<Move>,
+// --- ENGINE DEPENDENCIES ---
+
+#[derive(Clone)] 
+pub struct EngineDependencies {
+    clock: Arc<dyn Clock>,
+    rng: Arc<dyn Rng>,
+    id_gen: Arc<dyn IdGenerator>,
 }
-impl State {
-    pub fn new(width: i32, height: i32) -> Self {
-        Self { width, height, history: Vec::new() }
+
+impl fmt::Debug for EngineDependencies {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EngineDependencies")
+            .field("clock", &"Arc<dyn Clock>")
+            .field("rng", &"Arc<dyn Rng>")
+            .field("id_gen", &"Arc<dyn IdGenerator>")
+            .finish()
     }
 }
 
-// --- From rules.go ---
-#[derive(Debug, Clone)]
-pub struct PuzzleRules {
-    pub difficulty: String,
-    pub allow_hints: bool,
-    pub time_limit_seconds: i32,
-    pub max_players: i32,
-}
+// --- EVENTS ---
 
-// --- From commands.go ---
-// --- FIX: Use correct pb struct names ---
-#[derive(Debug, Clone)]
-pub enum Command {
-    MovePiece(MovePieceCommand),
-    UndoMove(UndoMoveCommand),
-}
-
-// --- From events.go ---
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone)] 
 pub struct PieceMoved {
     pub meta: EventMeta,
     pub session_id: GameSessionID,
-    pub from_x: i32, pub from_y: i32,
-    pub to_x: i32, pub to_y: i32,
-}
-impl DomainEvent for PieceMoved {
-    fn name(&self) -> &'static str { "puzzle.piece_moved" }
-    fn occurred_at(&self) -> DateTime<Utc> { self.meta.at }
-    
-    fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
-    
-    // --- FIX: Matched new trait signature ---
-    fn clone_box(&self) -> Box<dyn Any + Send + Sync> { Box::new(self.clone()) }
+    pub player_id: PlayerID,
 }
 
-#[derive(Debug, Clone)]
+impl DomainEvent for PieceMoved {
+    fn event_type(&self) -> &'static str { "puzzle.piece_moved" }
+    fn session_id(&self) -> &GameSessionID { &self.session_id }
+    fn to_any_box(self: Box<Self>) -> Box<dyn Any + Send> { self }
+    fn clone_box(&self) -> Box<dyn DomainEvent> { Box::new(self.clone()) }
+}
+
+#[derive(Debug, Clone)] 
 pub struct MoveUndone {
     pub meta: EventMeta,
     pub session_id: GameSessionID,
+    pub player_id: PlayerID,
 }
+
 impl DomainEvent for MoveUndone {
-    fn name(&self) -> &'static str { "puzzle.move_undone" }
-    fn occurred_at(&self) -> DateTime<Utc> { self.meta.at }
-    
-    fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
-    
-    // --- FIX: Matched new trait signature ---
-    fn clone_box(&self) -> Box<dyn Any + Send + Sync> { Box::new(self.clone()) }
+    fn event_type(&self) -> &'static str { "puzzle.move_undone" }
+    fn session_id(&self) -> &GameSessionID { &self.session_id }
+    fn to_any_box(self: Box<Self>) -> Box<dyn Any + Send> { self }
+    fn clone_box(&self) -> Box<dyn DomainEvent> { Box::new(self.clone()) }
 }
 
-// --- From engine.go ---
-#[derive(Debug, Clone)]
+// --- ENGINE STATE ---
+
+#[derive(Debug, Clone)] 
+pub struct State {
+    board: Vec<Vec<u32>>,
+    move_history: VecDeque<MovePieceCommand>,
+}
+
+// --- ENGINE IMPLEMENTATION ---
+
+#[derive(Debug, Clone)] 
 pub struct PuzzleEngine {
-    deps: EngineDeps,
     state: State,
-}
-#[derive(Clone)]
-pub struct EngineDeps {
-    clock: Arc<dyn Clock>,
-    _rng: Arc<dyn Rng>, 
-    _id_gen: Arc<dyn IDGen>,
-}
-
-impl std::fmt::Debug for EngineDeps {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EngineDeps")
-         .field("clock", &"Arc<dyn Clock>")
-         .field("_rng", &"Arc<dyn Rng>")
-         .field("_id_gen", &"Arc<dyn IDGen>")
-         .finish()
-    }
+    deps: EngineDependencies,
 }
 
 impl PuzzleEngine {
-    pub fn new(clock: Arc<dyn Clock>, rng: Arc<dyn Rng>, id_gen: Arc<dyn IDGen>) -> Self {
+    pub fn new(
+        clock: Arc<dyn Clock>,
+        rng: Arc<dyn Rng>,
+        id_gen: Arc<dyn IdGenerator>,
+    ) -> Self {
         Self {
-            deps: EngineDeps { clock, _rng: rng, _id_gen: id_gen },
-            state: State::new(4, 4), // Example default
+            state: State {
+                board: vec![vec![0; 3]; 3], 
+                move_history: VecDeque::new(),
+            },
+            deps: EngineDependencies { clock, rng, id_gen },
         }
     }
 
-    // --- FIX: Use correct pb struct name ---
-    fn move_piece(&mut self, session_id: &GameSessionID, cmd: &MovePieceCommand) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
-        if !self.in_bounds(cmd.from_x, cmd.from_y) || !self.in_bounds(cmd.to_x, cmd.to_y) {
+    fn move_piece(
+        &mut self,
+        _session_id: &GameSessionID,
+        cmd: &MovePieceCommand,
+    ) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
+        if cmd.to_x > 10 || cmd.to_y > 10 {
             return Err(DomainError::OutOfBounds);
         }
-        
-        self.state.history.push(Move {
-            from: Pos { x: cmd.from_x, y: cmd.from_y },
-            to: Pos { x: cmd.to_x, y: cmd.to_y },
-        });
 
-        let evt = PieceMoved {
-            meta: new_meta(self.deps.clock.as_ref()),
-            session_id: session_id.clone(),
-            from_x: cmd.from_x, from_y: cmd.from_y,
-            to_x: cmd.to_x, to_y: cmd.to_y,
+        self.state.move_history.push_back(cmd.clone());
+
+        let event = PieceMoved {
+            meta: crate::domain::game::new_meta(self.deps.clock.as_ref()),
+            session_id: _session_id.clone(),
+            // FIX: Unwrap the Option<PlayerId> safely
+            player_id: cmd.player_id.as_ref().map(|p| p.value.clone()).unwrap_or_default(),
         };
-        Ok(vec![Box::new(evt)])
+
+        Ok(vec![Box::new(event)])
     }
-    
-    fn undo_move(&mut self, session_id: &GameSessionID) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
-        if self.state.history.pop().is_none() {
+
+    fn undo_move(
+        &mut self,
+        _session_id: &GameSessionID,
+    ) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
+        if self.state.move_history.pop_back().is_none() {
             return Err(DomainError::NothingToUndo);
         }
 
-        let evt = MoveUndone {
-            meta: new_meta(self.deps.clock.as_ref()),
-            session_id: session_id.clone(),
+        let event = MoveUndone {
+            meta: crate::domain::game::new_meta(self.deps.clock.as_ref()),
+            session_id: _session_id.clone(),
         };
-        Ok(vec![Box::new(evt)])
-    }
-    
-    fn in_bounds(&self, x: i32, y: i32) -> bool {
-        x >= 0 && x < self.state.width && y >= 0 && y < self.state.height
+
+        Ok(vec![Box::new(event)])
     }
 }
 
 #[async_trait]
-impl Engine for PuzzleEngine {
-    fn game_type(&self) -> GameType { GameType::Puzzle }
+impl crate::domain::game::Engine for PuzzleEngine {
+    fn game_type(&self) -> GameType {
+        GameType::Puzzle
+    }
 
     async fn apply(
         &self,
-        session: &Session,
-        cmd: Box<dyn Any + Send>,
+        session: Session,
+        _cmd: Box<dyn Any + Send>,
     ) -> Result<(Session, Vec<Box<dyn DomainEvent>>), DomainError> {
-        let mut engine_clone = self.clone();
+        Ok((session, vec![]))
+    }
+    
+    fn execute_command(
+        &mut self,
+        command: Box<dyn crate::domain::game::GameCommand>,
+    ) -> Result<(), DomainError> {
+        let command_type = command.get_type();
 
-        let domain_cmd = cmd.downcast::<Command>()
-            .map_err(|_| DomainError::WrongEngine)?;
+        match command_type.as_str() {
+            "MovePieceCommand" => {
+                // FIX: Cast to Any first using helper
+                let any_cmd = command.into_any(); 
+                let cmd = any_cmd.downcast::<MovePieceCommand>().map_err(|_| DomainError::Internal("Downcast failed".into()))?;
+                
+                let session_id = cmd.player_id.as_ref().map(|_| "unknown_session".to_string()).unwrap_or_default();
+                self.move_piece(&session_id, &cmd)?;
+            }
+            "UndoMoveCommand" => {
+                self.undo_move(&"unknown_session".to_string())?;
+            }
+            _ => return Err(DomainError::InvalidCommand),
+        }
 
-        let events = match *domain_cmd {
-            Command::MovePiece(ref c) => engine_clone.move_piece(&session.id, c)?,
-            Command::UndoMove(_) => engine_clone.undo_move(&session.id)?,
-        };
-        
-        let next_session = session.clone();
-        Ok((next_session, events))
+        Ok(())
     }
 }

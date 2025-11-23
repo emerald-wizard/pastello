@@ -1,77 +1,87 @@
-use crate::{
-    application::{
-        commands::{GameCommand, StartGame},
-        services::command_registry::CommandRegistry,
-        // --- FIX: Removed unused imports ---
-        // usecase::handle_game_command::{HandleGameCommandUseCase, HandleGameCommandIn, AppCommandResponse},
-        usecase::handle_game_command::HandleGameCommandUseCase,
-    },
-    // --- FIX: Removed unused import ---
-    // commands::AppCommand,
-    domain::game::{DomainError, Session},
-    ports::{EventBus, Repo},
-};
+use crate::ports::{Clock, GameRepository, IdGenerator, EventBus};
+use crate::domain::game::{Session, GameType, Player, GameEngineFactory, Engine};
+use crate::application::usecase::handle_game_command::HandleGameCommandUseCase;
+use crate::application::commands::{StartGameSessionCommand, GameCommandMessage}; 
+use crate::application::services::command_registry::CommandRegistry;
 use std::sync::Arc;
+use tokio::sync::Mutex;
+use anyhow::{Result, bail};
+use tracing::info;
 
-// GameService is the main entry point for game-related application logic.
 #[derive(Clone)]
 pub struct GameService {
-    repo: Arc<dyn Repo<Session>>,
-    bus: Arc<dyn EventBus>,
-    command_registry: Arc<CommandRegistry>,
+    repo: Arc<dyn GameRepository>,
+    _event_bus: Arc<dyn EventBus>,
+    clock: Arc<dyn Clock>,
+    id_gen: Arc<dyn IdGenerator>,
+    engine_factory: Arc<dyn GameEngineFactory>,
+    command_registry: Arc<CommandRegistry>, 
 }
 
 impl GameService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        repo: Arc<dyn Repo<Session>>,
-        bus: Arc<dyn EventBus>,
+        repo: Arc<dyn GameRepository>,
+        event_bus: Arc<dyn EventBus>,
+        clock: Arc<dyn Clock>,
+        id_gen: Arc<dyn IdGenerator>,
+        engine_factory: Arc<dyn GameEngineFactory>,
         command_registry: Arc<CommandRegistry>,
     ) -> Self {
         Self {
             repo,
-            bus,
+            _event_bus: event_bus,
+            clock,
+            id_gen,
+            engine_factory,
             command_registry,
         }
     }
 
-    pub async fn start_game(&self, cmd: StartGame) -> Result<(), DomainError> {
-        // 1. Create a new session
-        let session = Session {
-            id: cmd.session_id.clone(),
-            game_type: cmd.game_type.clone(),
-            players: vec![cmd.player.value], // Create a new list with the player
+    pub async fn start_game_session(&self, cmd: StartGameSessionCommand) -> Result<String> {
+        let session_id = self.id_gen.new_id();
+        
+        let host = Player {
+            id: cmd.player_id.clone(),
+            name: "Host".to_string(), 
         };
 
-        // 2. Save the session
-        self.repo.save(&session.id, session).await;
+        let session = Session {
+            id: session_id.clone(),
+            game_type: cmd.game_type,
+            players: vec![host], 
+            host_id: cmd.player_id.clone(), 
+        };
 
-        tracing::info!("Game started: {:?}", cmd);
-        Ok(())
+        self.repo.save(&session.id.clone(), session).await?;
+        
+        info!("Game started: {}", session_id); 
+
+        Ok(session_id)
     }
 
-    pub async fn handle_command(
-        &self,
-        cmd: GameCommand,
-    ) -> Result<(), DomainError> {
-        // 1. Find the right engine for the command
-        let (engine, domain_command) = self
-            .command_registry
-            .map_command(cmd.command)?;
+    pub async fn handle_game_command(&self, game_id: &str, command: GameCommandMessage) -> Result<()> {
+        let session = self.repo.get(game_id).await?;
+        let session = match session {
+            Some(s) => s,
+            None => bail!("Game session not found"),
+        };
 
-        // 2. Create the use case
+        // 1. Create engine (returns Box<dyn Engine>)
+        let engine = self.engine_factory.create_engine(session.game_type.clone());
+        
+        // 2. Wrap in Mutex. Box<dyn Engine> naturally implements Send if trait does.
+        // We cast explicitly to the type expected by the UseCase.
+        // Note: Box<dyn Engine> satisfies Box<dyn Engine + Send> because Engine: Send.
+        let engine_mutex: Arc<Mutex<Box<dyn Engine + Send>>> = Arc::new(Mutex::new(engine as Box<dyn Engine + Send>));
+        
         let use_case = HandleGameCommandUseCase::new(
             self.repo.clone(),
-            self.bus.clone(),
-            engine,
+            self.clock.clone(),
+            self.command_registry.clone(),
+            engine_mutex, 
         );
 
-        // 3. Re-package the command
-        let cmd_with_domain_obj = GameCommand {
-            command: domain_command,
-            ..cmd
-        };
-        
-        // 4. Execute
-        use_case.execute(cmd_with_domain_obj).await
+        use_case.execute(session, command).await
     }
 }

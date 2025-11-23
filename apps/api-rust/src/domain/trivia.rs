@@ -1,170 +1,177 @@
-use crate::domain::game::*;
-// --- FIX: Use correct pb struct names ---
+use crate::domain::game::{
+    DomainError, DomainEvent, EventMeta, GameCommand, GameSessionID, GameType, PlayerID, Session,
+};
+use crate::ports::{Clock, IdGenerator, Rng};
 use crate::pb::runecraftstudios::pastello::game::trivia::v1::{SubmitAnswerCommand, RevealHintCommand};
-// --- FIX: Use correct pb struct name ---
-//use crate::pb::runecraftstudios::pastello::game::types::v1::PlayerId;
-use crate::ports::{Clock, Rng, IDGen};
+use anyhow::Result;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::fmt;
 
-// --- From models.go ---
-#[derive(Debug, Clone)]
-pub struct State {
-    pub scores: HashMap<PlayerID, i32>,
-    pub hints: Vec<String>,
+// --- IMPLEMENT GameCommand for Protobuf structs ---
+
+impl GameCommand for SubmitAnswerCommand {
+    fn get_type(&self) -> String { "SubmitAnswerCommand".to_string() }
+    fn into_any(self: Box<Self>) -> Box<dyn Any + Send> { self }
 }
-impl State {
-    pub fn new() -> Self {
-        Self { scores: HashMap::new(), hints: Vec::new() }
+
+impl GameCommand for RevealHintCommand {
+    fn get_type(&self) -> String { "RevealHintCommand".to_string() }
+    fn into_any(self: Box<Self>) -> Box<dyn Any + Send> { self }
+}
+
+// --- ENGINE DEPENDENCIES ---
+
+#[derive(Clone)] 
+pub struct EngineDependencies {
+    clock: Arc<dyn Clock>,
+    rng: Arc<dyn Rng>,
+    id_gen: Arc<dyn IdGenerator>,
+}
+
+impl fmt::Debug for EngineDependencies {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EngineDependencies")
+            .field("clock", &"Arc<dyn Clock>")
+            .field("rng", &"Arc<dyn Rng>")
+            .field("id_gen", &"Arc<dyn IdGenerator>")
+            .finish()
     }
 }
-impl Default for State {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
+// --- EVENTS ---
 
-// --- From rules.go ---
-#[derive(Debug, Clone)]
-pub struct TriviaRules {
-    // ... fields
-}
-
-// --- From commands.go ---
-// --- FIX: Use correct pb struct names ---
-#[derive(Debug, Clone)]
-pub enum Command {
-    SubmitAnswer(SubmitAnswerCommand),
-    RevealHint(RevealHintCommand),
-}
-
-// --- From events.go ---
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone)] 
 pub struct AnswerAccepted {
     pub meta: EventMeta,
     pub session_id: GameSessionID,
     pub player_id: PlayerID,
-    pub delta: i32,
-    pub total: i32,
-}
-impl DomainEvent for AnswerAccepted {
-    fn name(&self) -> &'static str { "trivia.answer_accepted" }
-    fn occurred_at(&self) -> DateTime<Utc> { self.meta.at }
-    
-    fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
-    
-    // --- FIX: Matched new trait signature ---
-    fn clone_box(&self) -> Box<dyn Any + Send + Sync> { Box::new(self.clone()) }
+    pub points_awarded: i32,
 }
 
-#[derive(Debug, Clone)]
+impl DomainEvent for AnswerAccepted {
+    fn event_type(&self) -> &'static str { "trivia.answer_accepted" }
+    fn session_id(&self) -> &GameSessionID { &self.session_id }
+    fn to_any_box(self: Box<Self>) -> Box<dyn Any + Send> { self }
+    fn clone_box(&self) -> Box<dyn DomainEvent> { Box::new(self.clone()) }
+}
+
+#[derive(Debug, Clone)] 
 pub struct HintRevealed {
     pub meta: EventMeta,
     pub session_id: GameSessionID,
-    pub hint: String,
-}
-impl DomainEvent for HintRevealed {
-    fn name(&self) -> &'static str { "trivia.hint_revealed" }
-    fn occurred_at(&self) -> DateTime<Utc> { self.meta.at }
-    
-    fn as_any(&self) -> &(dyn Any + Send + Sync) { self }
-    
-    // --- FIX: Matched new trait signature ---
-    fn clone_box(&self) -> Box<dyn Any + Send + Sync> { Box::new(self.clone()) }
 }
 
-// --- From engine.go ---
-#[derive(Debug, Clone)]
+impl DomainEvent for HintRevealed {
+    fn event_type(&self) -> &'static str { "trivia.hint_revealed" }
+    fn session_id(&self) -> &GameSessionID { &self.session_id }
+    fn to_any_box(self: Box<Self>) -> Box<dyn Any + Send> { self }
+    fn clone_box(&self) -> Box<dyn DomainEvent> { Box::new(self.clone()) }
+}
+
+// --- ENGINE STATE ---
+
+#[derive(Debug, Clone)] 
+pub struct State {
+    pub scores: HashMap<PlayerID, i32>, 
+    pub question_index: u32,
+}
+
+// --- ENGINE IMPLEMENTATION ---
+
+#[derive(Debug, Clone)] 
 pub struct TriviaEngine {
-    deps: EngineDeps,
     state: State,
-}
-#[derive(Clone)]
-pub struct EngineDeps {
-    clock: Arc<dyn Clock>,
-    _rng: Arc<dyn Rng>,
-    _id_gen: Arc<dyn IDGen>,
-}
-impl std::fmt::Debug for EngineDeps {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EngineDeps")
-         .field("clock", &"Arc<dyn Clock>")
-         .field("_rng", &"Arc<dyn Rng>")
-         .field("_id_gen", &"Arc<dyn IDGen>")
-         .finish()
-    }
+    deps: EngineDependencies,
 }
 
 impl TriviaEngine {
-    pub fn new(clock: Arc<dyn Clock>, rng: Arc<dyn Rng>, id_gen: Arc<dyn IDGen>) -> Self {
+    pub fn new(
+        clock: Arc<dyn Clock>,
+        rng: Arc<dyn Rng>,
+        id_gen: Arc<dyn IdGenerator>,
+    ) -> Self {
         Self {
-            deps: EngineDeps { clock, _rng: rng, _id_gen: id_gen },
-            state: State::new(),
+            state: State {
+                scores: HashMap::new(),
+                question_index: 0,
+            },
+            deps: EngineDependencies { clock, rng, id_gen },
         }
     }
 
-    // --- FIX: Use correct pb struct name ---
-    fn submit_answer(&mut self, session_id: &GameSessionID, cmd: &SubmitAnswerCommand) -> Vec<Box<dyn DomainEvent>> {
-        // --- FIX: Handle Option<PlayerId> ---
-        let player_id = match &cmd.player_id {
-            Some(id) => id.value.clone(),
-            None => {
-                tracing::warn!("SubmitAnswer command missing player_id");
-                return Vec::new(); // Or return an error
-            }
+    fn submit_answer(
+        &mut self,
+        _session_id: &GameSessionID,
+        cmd: &SubmitAnswerCommand,
+    ) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
+        let player_id_str = cmd.player_id.as_ref().map(|p| p.value.clone()).unwrap_or_default();
+        
+        *self.state.scores.entry(player_id_str.clone()).or_insert(0) += 10;
+        self.state.question_index += 1;
+        
+        let event = AnswerAccepted {
+            meta: crate::domain::game::new_meta(self.deps.clock.as_ref()),
+            session_id: _session_id.clone(),
+            player_id: player_id_str,
+            points_awarded: 10,
         };
 
-        const DELTA: i32 = 10; // Logic from Go
-        let current_score = self.state.scores.entry(player_id.clone()).or_insert(0);
-        *current_score += DELTA;
-        let total = *current_score;
-
-        let evt = AnswerAccepted {
-            meta: new_meta(self.deps.clock.as_ref()),
-            session_id: session_id.clone(),
-            player_id,
-            delta: DELTA,
-            total,
-        };
-        vec![Box::new(evt)]
+        Ok(vec![Box::new(event)])
     }
 
-    fn reveal_hint(&mut self, session_id: &GameSessionID) -> Vec<Box<dyn DomainEvent>> {
-        let hint = "This is a hint.".to_string(); // Logic from Go
-        self.state.hints.push(hint.clone());
-
-        let evt = HintRevealed {
-            meta: new_meta(self.deps.clock.as_ref()),
-            session_id: session_id.clone(),
-            hint,
+    fn reveal_hint(
+        &mut self,
+        _session_id: &GameSessionID,
+    ) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
+        let event = HintRevealed {
+            meta: crate::domain::game::new_meta(self.deps.clock.as_ref()),
+            session_id: _session_id.clone(),
         };
-        vec![Box::new(evt)]
+
+        Ok(vec![Box::new(event)])
     }
 }
 
 #[async_trait]
-impl Engine for TriviaEngine {
-    fn game_type(&self) -> GameType { GameType::Trivia }
+impl crate::domain::game::Engine for TriviaEngine {
+    fn game_type(&self) -> GameType {
+        GameType::Trivia
+    }
 
     async fn apply(
         &self,
-        session: &Session,
-        cmd: Box<dyn Any + Send>,
+        session: Session,
+        _cmd: Box<dyn Any + Send>,
     ) -> Result<(Session, Vec<Box<dyn DomainEvent>>), DomainError> {
-        let mut engine_clone = self.clone();
-        let domain_cmd = cmd.downcast::<Command>()
-            .map_err(|_| DomainError::WrongEngine)?;
+        Ok((session, vec![]))
+    }
 
-        let events = match *domain_cmd {
-            Command::SubmitAnswer(ref c) => engine_clone.submit_answer(&session.id, c),
-            Command::RevealHint(_) => engine_clone.reveal_hint(&session.id),
-        };
-        
-        let next_session = session.clone();
-        Ok((next_session, events))
+    fn execute_command(
+        &mut self,
+        command: Box<dyn crate::domain::game::GameCommand>,
+    ) -> Result<(), DomainError> {
+        let command_type = command.get_type();
+
+        match command_type.as_str() {
+            "SubmitAnswerCommand" => {
+                // FIX: Cast to Any before downcasting
+                let any_cmd = command.into_any();
+                let cmd = any_cmd.downcast::<SubmitAnswerCommand>().map_err(|_| DomainError::Internal("Downcast failed".into()))?;
+                let session_id = cmd.session_id.as_ref().map(|s| s.value.clone()).unwrap_or_default();
+                self.submit_answer(&session_id, &cmd)?;
+            }
+            "RevealHintCommand" => {
+                 let any_cmd = command.into_any();
+                let cmd = any_cmd.downcast::<RevealHintCommand>().map_err(|_| DomainError::Internal("Downcast failed".into()))?;
+                let session_id = cmd.session_id.as_ref().map(|s| s.value.clone()).unwrap_or_default();
+                self.reveal_hint(&session_id)?;
+            }
+            _ => return Err(DomainError::InvalidCommand),
+        }
+
+        Ok(())
     }
 }

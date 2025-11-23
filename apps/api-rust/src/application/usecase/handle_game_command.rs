@@ -1,128 +1,65 @@
-use crate::application::commands::GameCommand;
-use crate::domain::game::{DomainError, Engine, GameType, Session};
-use crate::pb::runecraftstudios::pastello::game::{
-    puzzle::v1 as puzzle, trivia::v1 as trivia,
-};
-use crate::ports::{EventBus, Repo};
-use std::any::Any;
+use crate::ports::{Clock, GameRepository};
+use crate::domain::game::{Session, Engine};
+use crate::application::commands::GameCommandMessage; 
+use crate::application::services::command_registry::CommandRegistry;
+use anyhow::{Result, bail};
 use std::sync::Arc;
+use tokio::sync::Mutex; 
+use tracing::{warn};
 
 pub struct HandleGameCommandUseCase {
-    repo: Arc<dyn Repo<Session>>,
-    bus: Arc<dyn EventBus>,
-    engine: Arc<dyn Engine>,
+    repo: Arc<dyn GameRepository>, 
+    _clock: Arc<dyn Clock>,
+    command_registry: Arc<CommandRegistry>,
+    // FIX: Engine stored in Mutex for safe mutable access across async tasks.
+    // We explicitly require `Send` because this struct will be moved across thread boundaries.
+    engine: Arc<Mutex<Box<dyn Engine + Send>>>, 
 }
 
 impl HandleGameCommandUseCase {
     pub fn new(
-        repo: Arc<dyn Repo<Session>>,
-        bus: Arc<dyn EventBus>,
-        engine: Arc<dyn Engine>,
+        repo: Arc<dyn GameRepository>, 
+        clock: Arc<dyn Clock>,
+        command_registry: Arc<CommandRegistry>,
+        // FIX: The constructor accepts the engine wrapped in a concurrency-safe container
+        engine: Arc<Mutex<Box<dyn Engine + Send>>>, 
     ) -> Self {
-        Self { repo, bus, engine }
+        Self {
+            repo,
+            _clock: clock,
+            command_registry,
+            engine,
+        }
     }
 
-    pub async fn execute(
-        &self,
-        input: GameCommand,
-    ) -> Result<(), DomainError> {
-        // 1. Find the session
-        let session = self.repo.find(&input.session_id).await;
-        let mut session = match session {
-            Some(s) => s,
-            None => {
-                tracing::warn!(
-                    "Session not found for command: {}",
-                    &input.session_id
-                );
-                return Err(DomainError::SessionNotFound(
-                    input.session_id.clone(),
-                ));
+    pub async fn execute(&self, session: Session, command: GameCommandMessage) -> Result<()> { 
+        let command_type = command.r#type.as_str();
+
+        // Clone session.game_type to prevent partial move errors when we pass it to the registry
+        let game_type = session.game_type.clone();
+
+        // Find and deserialize the command payload using the registry
+        let game_command = match self.command_registry.deserialize(game_type, command_type, &command.payload) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Failed to deserialize command {}: {:?}", command_type, e);
+                bail!("Invalid command payload for type: {}", command_type);
             }
         };
 
-        // 2. Authorize
-        // --- FIX: Typo player_ids -> players ---
-        if !session.players.contains(&input.player_id) {
-            tracing::warn!(
-                "Player {} not in session {}",
-                &input.player_id,
-                &input.session_id
-            );
-            return Err(DomainError::SessionNotFound(
-                input.session_id.clone(),
-            ));
-        }
+        // FIX: Lock the Mutex to gain mutable access to the engine instance.
+        // This blocks the current task until the lock is acquired, ensuring exclusive access.
+        let mut engine_lock = self.engine.lock().await;
+        
+        // Now we have a mutable reference to the Engine trait object, satisfying the `&mut self` requirement
+        engine_lock.execute_command(game_command)?;
+        
+        // The Mutex guard `engine_lock` is dropped at the end of this scope, releasing the lock.
 
-        // --- FIX: Removed invalid check ---
-        // `GameType` enum does not have an `Unspecified` variant
-        // if session.game_type == GameType::Unspecified {
-        //     tracing::error!("Session has unspecified game type: {}", &input.session_id);
-        //     return Err(DomainError::WrongEngine);
-        // }
-
-        if session.game_type != self.engine.game_type() {
-            tracing::error!(
-                "Command sent to wrong engine. Session: {:?}, Engine: {:?}",
-                session.game_type,
-                self.engine.game_type()
-            );
-            return Err(DomainError::WrongEngine);
-        }
-
-        // 3. Execute
-        let (next_session, events) =
-            self.engine.apply(&session, input.command).await?;
-
-        // 4. Save
-        session = next_session;
-        self.repo.save(&session.id, session).await;
-
-        // 5. Publish events
-        for event in events {
-            let _ = self.bus.publish(event.name(), event.clone_box()).await;
-        }
+        // Save the updated session state to the repository
+        // We clone the ID because `session` is moved into `save`
+        self.repo.save(&session.id.clone(), session).await?;
 
         Ok(())
-    }
-}
-
-// TODO: This logic should be moved into the `Engine` implementations
-// This is a temporary solution to map from the `Any` type.
-pub fn map_command(
-    game_type: &GameType,
-    cmd: Box<dyn Any + Send>,
-) -> Option<Box<dyn Any + Send>> {
-    match game_type {
-        GameType::Puzzle => {
-            if let Ok(c) = cmd.downcast::<puzzle::MovePieceCommand>() {
-                // --- FIX: Use correct struct name ---
-                Some(Box::new(crate::domain::puzzle::Command::MovePiece(
-                    puzzle::MovePieceCommand { from_x: c.from_x, from_y: c.from_y, to_x: c.to_x, to_y: c.to_y }
-                )))
-            } else if cmd.downcast::<puzzle::UndoMoveCommand>().is_ok() {
-                // --- FIX: Use correct struct name and syntax ---
-                Some(Box::new(crate::domain::puzzle::Command::UndoMove(
-                    puzzle::UndoMoveCommand {}
-                )))
-            } else {
-                None
-            }
-        }
-        GameType::Trivia => {
-            if let Ok(c) = cmd.downcast::<trivia::SubmitAnswerCommand>() {
-                // --- FIX: Use correct struct name ---
-                Some(Box::new(crate::domain::trivia::Command::SubmitAnswer(
-                    trivia::SubmitAnswerCommand { player_id: c.player_id.clone(), answer: c.answer.clone() }
-                )))
-            } else if cmd.downcast::<trivia::RevealHintCommand>().is_ok() {
-                // --- FIX: Use correct struct name and syntax ---
-                Some(Box::new(crate::domain::trivia::Command::RevealHint(
-                    trivia::RevealHintCommand {}
-                )))
-            } else {
-                None
-            }
-        }
     }
 }

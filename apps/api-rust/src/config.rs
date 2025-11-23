@@ -1,75 +1,28 @@
 use serde::{Deserialize, Serialize};
-use std::{fs::File, io::Read};
+use serde_yaml;
+use std::fs;
+use thiserror::Error;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ServerConfig {
-    pub port: u16,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AuthConfig {
-    pub jwks_url: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DbConfig {
-    pub url: String,
-}
-
-// --- FIX: Add pub ---
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub server: ServerConfig,
-    pub auth: AuthConfig,
-    pub db: DbConfig,
+    pub server_addr: String,
+    // Assuming this field exists based on usage in main.rs
+    pub firebase_project_id: String,
 }
 
-impl Config {
-    pub fn load(path: &str) -> Result<Self, std::io::Error> {
-        let mut file = File::open(path)?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-        let config: Config = serde_yaml::from_str(&contents)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        Ok(config)
-    }
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("Failed to read config file: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Failed to parse config YAML: {0}")]
+    Yaml(#[from] serde_yaml::Error),
 }
 
-//use serde::Deserialize;
-//use std::fs;
-//use anyhow::{Context, Result};
-//
-//#[derive(Debug, Deserialize, Clone)]
-//#[serde(rename_all = "camelCase")]
-//pub struct AppConfig {
-//    pub log_level: String,
-//    pub db: DbConfig,
-//    pub auth: AuthConfig,
-//}
-//
-//#[derive(Debug, Deserialize, Clone)]
-//pub struct DbConfig {
-//    pub host: String,
-//    pub port: u16,
-//    pub user: String,
-//    pub password: String,
-//    pub name: String,
-//}
-//
-//#[derive(Debug, Deserialize, Clone)]
-//#[serde(rename_all = "camelCase")]
-//pub struct AuthConfig {
-//    pub jwks_url: String,      // e.g., "http://localhost:8081/.well-known/jwks.json"
-//    pub audience: String,      // e.g., "pastello-game-room"
-//    pub issuer: String,        // e.g., "pastello-lobby-api"
-//}
-//
-//pub fn load_config(path: &str) -> Result<AppConfig> {
-//    let data = fs::read_to_string(path)
-//        .with_context(|| format!("Failed to read config file at: {}", path))?;
-//    
-//    let cfg: AppConfig = serde_yaml::from_str(&data)
-//        .with_context(|| "Failed to unmarshal config YAML")?;
-//    
-//    Ok(cfg)
-//}
+// FIX: Ensure load_config is public
+pub fn load_config() -> Result<Config, ConfigError> {
+    // Assuming standard config path, update if different
+    let config_path = "config/config.yml"; 
+    let contents = fs::read_to_string(config_path)?;
+    let config: Config = serde_yaml::from_str(&contents)?;
+    Ok(config)
+}

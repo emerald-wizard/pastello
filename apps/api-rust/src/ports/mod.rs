@@ -1,35 +1,30 @@
+use crate::domain::game::Session;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use std::any::Any;
-use tokio_stream::Stream;
+use anyhow::Result;
+use std::any::Any; // Needed for EventBus trait
 
 #[async_trait]
 pub trait Clock: Send + Sync {
-    fn now(&self) -> DateTime<Utc>;
+    fn now_utc(&self) -> chrono::DateTime<chrono::Utc>; 
+}
+
+pub trait EventBus: Send + Sync {
+    fn publish(&self, event: Box<dyn Any + Send>) -> Result<()> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+pub trait GameRepository: Send + Sync {
+    async fn get(&self, id: &str) -> Result<Option<Session>>;
+    async fn save(&self, id: &str, session: Session) -> Result<()>;
+}
+
+pub trait IdGenerator: Send + Sync {
+    fn new_id(&self) -> String;
 }
 
 #[async_trait]
 pub trait Rng: Send + Sync {
     async fn rand_int(&self, min: i32, max: i32) -> i32;
-}
-
-#[async_trait]
-pub trait IDGen: Send + Sync {
-    async fn new_id(&self) -> String;
-}
-
-#[async_trait]
-// --- FIX: Add pub ---
-pub trait Repo<T: Clone + Send + Sync>: Send + Sync {
-    async fn find(&self, id: &str) -> Option<T>;
-    async fn save(&self, id: &str, item: T);
-}
-
-#[async_trait]
-pub trait EventBus: Send + Sync {
-    async fn publish(&self, topic: &str, payload: Box<dyn Any + Send>) -> anyhow::Result<()>;
-    async fn subscribe(
-        &self,
-        topic: &str,
-    ) -> Box<dyn Stream<Item = Box<dyn Any + Send>> + Send + Unpin>;
 }

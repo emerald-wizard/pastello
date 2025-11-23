@@ -1,8 +1,8 @@
-use crate::ports::IDGen;
-use async_trait::async_trait;
+// FIX: Corrected trait import name from IDGen to IdGenerator (E0432)
+use crate::ports::IdGenerator; 
 use uuid::Uuid;
 
-// --- FIX: Add pub ---
+#[derive(Debug, Clone, Copy)]
 pub struct UuidGenerator;
 
 impl UuidGenerator {
@@ -17,9 +17,8 @@ impl Default for UuidGenerator {
     }
 }
 
-#[async_trait]
-impl IDGen for UuidGenerator {
-    async fn new_id(&self) -> String {
+impl IdGenerator for UuidGenerator {
+    fn new_id(&self) -> String {
         Uuid::new_v4().to_string()
     }
 }

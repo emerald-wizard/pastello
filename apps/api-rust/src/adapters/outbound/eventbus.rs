@@ -1,9 +1,9 @@
 use crate::ports::EventBus;
-use async_trait::async_trait;
+use anyhow::Result;
 use std::any::Any;
-use tokio_stream::Stream;
+// Removed unused imports (async_trait, tokio_stream)
 
-// --- FIX: Add pub ---
+#[derive(Debug, Clone)]
 pub struct NopEventBus;
 
 impl NopEventBus {
@@ -18,18 +18,9 @@ impl Default for NopEventBus {
     }
 }
 
-#[async_trait]
 impl EventBus for NopEventBus {
-    async fn publish(&self, topic: &str, _payload: Box<dyn Any + Send>) -> anyhow::Result<()> {
-        tracing::debug!("NopEventBus: Firing event on topic: {}", topic);
+    // FIX: Corrected method signature to match trait (E0050)
+    fn publish(&self, _event: Box<dyn Any + Send>) -> Result<()> {
         Ok(())
-    }
-
-    async fn subscribe(
-        &self,
-        topic: &str,
-    ) -> Box<dyn Stream<Item = Box<dyn Any + Send>> + Send + Unpin> {
-        tracing::debug!("NopEventBus: Subscribing to topic: {}", topic);
-        Box::new(tokio_stream::empty())
     }
 }
