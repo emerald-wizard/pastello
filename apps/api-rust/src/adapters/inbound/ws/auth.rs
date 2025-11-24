@@ -1,5 +1,4 @@
-use crate::AppState; 
-use crate::domain::game::Session; 
+use crate::domain::game::Session;
 use anyhow::Result;
 use async_trait::async_trait;
 use jsonwebtoken::jwk::JwkSet;
@@ -86,20 +85,20 @@ impl FirebaseAuthenticator {
             .map_err(|e| AuthError::Network(e.to_string()))?
             .json::<JwkSet>()
             .await
-            .map_err(|e| AuthError::Jwk(e.to_string()))?; 
+            .map_err(|e| AuthError::Jwk(e.to_string()))?;
 
         // Find and process the key
         let jwk = jwks
             .keys
             .iter()
             .find(|k| k.common.key_id.as_deref() == Some(kid))
-            .ok_or(AuthError::NoMatchingKey)?; 
+            .ok_or(AuthError::NoMatchingKey)?;
 
         // FIX: Use DecodingKey::from_jwk which correctly handles RS256 components (E0599 fix)
         if jwk.common.key_algorithm.as_ref().map(|a| a.to_string()) == Some("RS256".to_string()) {
             let decoding_key = DecodingKey::from_jwk(jwk)
                 .map_err(|e| AuthError::Jwk(format!("JWK conversion error: {}", e.to_string())))?;
-                
+
             // Cache the key
             self.keys
                 .write()
@@ -107,7 +106,7 @@ impl FirebaseAuthenticator {
                 .insert(kid.to_string(), decoding_key.clone());
             Ok(decoding_key)
         } else {
-            Err(AuthError::UnsupportedAlgorithm) 
+            Err(AuthError::UnsupportedAlgorithm)
         }
     }
 
@@ -126,20 +125,20 @@ impl FirebaseAuthenticator {
 
 #[async_trait]
 impl Authenticator for FirebaseAuthenticator {
-    async fn authenticate(&self, token: &str) -> Result<Session, AuthError> { 
-        let header = decode_header(token).map_err(|e| AuthError::Jwk(e.to_string()))?; 
-        let kid = header.kid.ok_or(AuthError::NoTokenKid)?; 
+    async fn authenticate(&self, token: &str) -> Result<Session, AuthError> {
+        let header = decode_header(token).map_err(|e| AuthError::Jwk(e.to_string()))?;
+        let kid = header.kid.ok_or(AuthError::NoTokenKid)?;
 
         let decoding_key = self.get_decoding_key(&kid).await?;
         let validation = self.create_validation();
 
         let token_data = decode::<FirebaseClaims>(token, &decoding_key, &validation)
-            .map_err(|e| AuthError::Jwt(e.to_string()))?; 
+            .map_err(|e| AuthError::Jwt(e.to_string()))?;
 
         // Construct Session with authenticated user_id as host_id
         Ok(Session {
-            host_id: token_data.claims.sub, 
-            id: "temp-session".to_string(), 
+            host_id: token_data.claims.sub,
+            id: "temp-session".to_string(),
             game_type: crate::domain::game::GameType::Puzzle, // Placeholder
             players: Vec::new(), // Placeholder
         })

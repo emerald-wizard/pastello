@@ -1,4 +1,4 @@
-use crate::ports::{Clock, IdGenerator, Rng};
+use crate::ports::Clock;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::sync::Arc;
 use thiserror::Error;
 
 pub type GameSessionID = String;
@@ -69,12 +68,12 @@ pub trait GameCommand: Send + Sync + Debug {
 pub trait Engine: Send + Sync + Debug {
     fn game_type(&self) -> GameType;
     fn execute_command(&mut self, command: Box<dyn GameCommand>) -> Result<(), DomainError>;
-    
+
     async fn apply(
         &self,
         session: Session,
         cmd: Box<dyn Any + Send>,
-    ) -> Result<(Session, Vec<Box<dyn DomainEvent>>), DomainError>; 
+    ) -> Result<(Session, Vec<Box<dyn DomainEvent>>), DomainError>;
 }
 
 #[async_trait]

@@ -10,13 +10,25 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::fmt;
 
+// --- IMPLEMENT GameCommand for Protobuf structs ---
+
+impl GameCommand for MovePieceCommand {
+    fn get_type(&self) -> String { "MovePieceCommand".to_string() }
+    fn into_any(self: Box<Self>) -> Box<dyn Any + Send> { self }
+}
+
+impl GameCommand for UndoMoveCommand {
+    fn get_type(&self) -> String { "UndoMoveCommand".to_string() }
+    fn into_any(self: Box<Self>) -> Box<dyn Any + Send> { self }
+}
+
 // --- ENGINE DEPENDENCIES ---
 
-#[derive(Clone)] 
+#[derive(Clone)]
 pub struct EngineDependencies {
     clock: Arc<dyn Clock>,
-    rng: Arc<dyn Rng>,
-    id_gen: Arc<dyn IdGenerator>,
+    _rng: Arc<dyn Rng>,
+    _id_gen: Arc<dyn IdGenerator>,
 }
 
 impl fmt::Debug for EngineDependencies {
@@ -31,7 +43,7 @@ impl fmt::Debug for EngineDependencies {
 
 // --- EVENTS ---
 
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub struct PieceMoved {
     pub meta: EventMeta,
     pub session_id: GameSessionID,
@@ -45,7 +57,7 @@ impl DomainEvent for PieceMoved {
     fn clone_box(&self) -> Box<dyn DomainEvent> { Box::new(self.clone()) }
 }
 
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub struct MoveUndone {
     pub meta: EventMeta,
     pub session_id: GameSessionID,
@@ -61,15 +73,15 @@ impl DomainEvent for MoveUndone {
 
 // --- ENGINE STATE ---
 
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub struct State {
-    board: Vec<Vec<u32>>,
+    _board: Vec<Vec<u32>>,
     move_history: VecDeque<MovePieceCommand>,
 }
 
 // --- ENGINE IMPLEMENTATION ---
 
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub struct PuzzleEngine {
     state: State,
     deps: EngineDependencies,
@@ -83,16 +95,16 @@ impl PuzzleEngine {
     ) -> Self {
         Self {
             state: State {
-                board: vec![vec![0; 3]; 3], 
+                _board: vec![vec![0; 3]; 3],
                 move_history: VecDeque::new(),
             },
-            deps: EngineDependencies { clock, rng, id_gen },
+            deps: EngineDependencies { clock, _rng: rng, _id_gen: id_gen },
         }
     }
 
     fn move_piece(
         &mut self,
-        _session_id: &GameSessionID,
+        session_id: &GameSessionID,
         cmd: &MovePieceCommand,
     ) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
         if cmd.to_x > 10 || cmd.to_y > 10 {
@@ -103,9 +115,12 @@ impl PuzzleEngine {
 
         let event = PieceMoved {
             meta: crate::domain::game::new_meta(self.deps.clock.as_ref()),
-            session_id: _session_id.clone(),
-            // FIX: Unwrap the Option<PlayerId> safely
-            player_id: cmd.player_id.as_ref().map(|p| p.value.clone()).unwrap_or_default(),
+            session_id: session_id.clone(),
+            player_id: cmd
+                .player_id
+                .as_ref()
+                .map(|p| p.value.clone())
+                .unwrap_or_default(),
         };
 
         Ok(vec![Box::new(event)])
@@ -113,7 +128,8 @@ impl PuzzleEngine {
 
     fn undo_move(
         &mut self,
-        _session_id: &GameSessionID,
+        session_id: &GameSessionID,
+        player_id: &PlayerID,
     ) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
         if self.state.move_history.pop_back().is_none() {
             return Err(DomainError::NothingToUndo);
@@ -121,7 +137,8 @@ impl PuzzleEngine {
 
         let event = MoveUndone {
             meta: crate::domain::game::new_meta(self.deps.clock.as_ref()),
-            session_id: _session_id.clone(),
+            session_id: session_id.clone(),
+            player_id: player_id.clone(),
         };
 
         Ok(vec![Box::new(event)])
@@ -141,7 +158,7 @@ impl crate::domain::game::Engine for PuzzleEngine {
     ) -> Result<(Session, Vec<Box<dyn DomainEvent>>), DomainError> {
         Ok((session, vec![]))
     }
-    
+
     fn execute_command(
         &mut self,
         command: Box<dyn crate::domain::game::GameCommand>,
@@ -151,14 +168,32 @@ impl crate::domain::game::Engine for PuzzleEngine {
         match command_type.as_str() {
             "MovePieceCommand" => {
                 // FIX: Cast to Any first using helper
-                let any_cmd = command.into_any(); 
+                let any_cmd = command.into_any();
                 let cmd = any_cmd.downcast::<MovePieceCommand>().map_err(|_| DomainError::Internal("Downcast failed".into()))?;
-                
-                let session_id = cmd.player_id.as_ref().map(|_| "unknown_session".to_string()).unwrap_or_default();
+
+                let session_id = cmd
+                    .session_id
+                    .as_ref()
+                    .map(|s| s.value.clone())
+                    .unwrap_or_default();
                 self.move_piece(&session_id, &cmd)?;
             }
             "UndoMoveCommand" => {
-                self.undo_move(&"unknown_session".to_string())?;
+                let any_cmd = command.into_any();
+                let cmd = any_cmd.downcast::<UndoMoveCommand>().map_err(|_| DomainError::Internal("Downcast failed".into()))?;
+
+                let session_id = cmd
+                    .session_id
+                    .as_ref()
+                    .map(|s| s.value.clone())
+                    .unwrap_or_default();
+                let player_id = cmd
+                    .player_id
+                    .as_ref()
+                    .map(|p| p.value.clone())
+                    .unwrap_or_default();
+
+                self.undo_move(&session_id, &player_id)?;
             }
             _ => return Err(DomainError::InvalidCommand),
         }

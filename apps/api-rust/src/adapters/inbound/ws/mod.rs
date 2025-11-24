@@ -43,7 +43,7 @@ async fn handle_socket(stream: WebSocket, _state: AppState, authenticator: Arc<d
     let session: Option<Session> = match auth_result {
         Ok(Ok(session)) => {
             // FIX: Use host_id instead of user_id
-            info!("Auth successful for user: {}", session.host_id); 
+            info!("Auth successful for user: {}", session.host_id);
             tx.send(Message::Text("AUTH_SUCCESS".to_string().into()))
                 .await
                 .ok(); // Send success
@@ -71,12 +71,12 @@ async fn handle_socket(stream: WebSocket, _state: AppState, authenticator: Arc<d
         return;
     }
 
-    let session = session.unwrap(); 
+    let session = session.unwrap();
     // FIX: Use host_id instead of user_id
-    let player_id = session.host_id.clone(); 
-    
+    let player_id = session.host_id.clone();
+
     // FIX (E0282): Explicitly type the Mutex contents
-    let game_state_stream = Arc::new(Mutex::new(None as Option<Box<dyn std::any::Any + Send>>)); 
+    let _game_state_stream = Arc::new(Mutex::new(None as Option<Box<dyn std::any::Any + Send>>));
 
     // Main game loop
     loop {
@@ -89,7 +89,7 @@ async fn handle_socket(stream: WebSocket, _state: AppState, authenticator: Arc<d
                         // TODO: Deserialize message, handle game logic
                         // _state.game_service.handle_command(...)
                     }
-                    Ok(Message::Binary(bin)) => {
+                    Ok(Message::Binary(_bin)) => {
                         info!("Received binary message from {}", player_id);
                         // TODO: Deserialize protobuf, handle game logic
                     }

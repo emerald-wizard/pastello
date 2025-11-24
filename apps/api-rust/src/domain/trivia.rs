@@ -24,11 +24,11 @@ impl GameCommand for RevealHintCommand {
 
 // --- ENGINE DEPENDENCIES ---
 
-#[derive(Clone)] 
+#[derive(Clone)]
 pub struct EngineDependencies {
     clock: Arc<dyn Clock>,
-    rng: Arc<dyn Rng>,
-    id_gen: Arc<dyn IdGenerator>,
+    _rng: Arc<dyn Rng>,
+    _id_gen: Arc<dyn IdGenerator>,
 }
 
 impl fmt::Debug for EngineDependencies {
@@ -43,7 +43,7 @@ impl fmt::Debug for EngineDependencies {
 
 // --- EVENTS ---
 
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub struct AnswerAccepted {
     pub meta: EventMeta,
     pub session_id: GameSessionID,
@@ -58,7 +58,7 @@ impl DomainEvent for AnswerAccepted {
     fn clone_box(&self) -> Box<dyn DomainEvent> { Box::new(self.clone()) }
 }
 
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub struct HintRevealed {
     pub meta: EventMeta,
     pub session_id: GameSessionID,
@@ -73,15 +73,15 @@ impl DomainEvent for HintRevealed {
 
 // --- ENGINE STATE ---
 
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub struct State {
-    pub scores: HashMap<PlayerID, i32>, 
+    pub scores: HashMap<PlayerID, i32>,
     pub question_index: u32,
 }
 
 // --- ENGINE IMPLEMENTATION ---
 
-#[derive(Debug, Clone)] 
+#[derive(Debug, Clone)]
 pub struct TriviaEngine {
     state: State,
     deps: EngineDependencies,
@@ -98,7 +98,7 @@ impl TriviaEngine {
                 scores: HashMap::new(),
                 question_index: 0,
             },
-            deps: EngineDependencies { clock, rng, id_gen },
+            deps: EngineDependencies { clock, _rng: rng, _id_gen: id_gen },
         }
     }
 
@@ -108,10 +108,10 @@ impl TriviaEngine {
         cmd: &SubmitAnswerCommand,
     ) -> Result<Vec<Box<dyn DomainEvent>>, DomainError> {
         let player_id_str = cmd.player_id.as_ref().map(|p| p.value.clone()).unwrap_or_default();
-        
+
         *self.state.scores.entry(player_id_str.clone()).or_insert(0) += 10;
         self.state.question_index += 1;
-        
+
         let event = AnswerAccepted {
             meta: crate::domain::game::new_meta(self.deps.clock.as_ref()),
             session_id: _session_id.clone(),

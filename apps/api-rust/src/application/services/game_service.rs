@@ -1,7 +1,7 @@
 use crate::ports::{Clock, GameRepository, IdGenerator, EventBus};
-use crate::domain::game::{Session, GameType, Player, GameEngineFactory, Engine};
+use crate::domain::game::{Session, Player, GameEngineFactory, Engine};
 use crate::application::usecase::handle_game_command::HandleGameCommandUseCase;
-use crate::application::commands::{StartGameSessionCommand, GameCommandMessage}; 
+use crate::application::commands::{StartGameSessionCommand, GameCommandMessage};
 use crate::application::services::command_registry::CommandRegistry;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -15,7 +15,7 @@ pub struct GameService {
     clock: Arc<dyn Clock>,
     id_gen: Arc<dyn IdGenerator>,
     engine_factory: Arc<dyn GameEngineFactory>,
-    command_registry: Arc<CommandRegistry>, 
+    command_registry: Arc<CommandRegistry>,
 }
 
 impl GameService {
@@ -40,22 +40,22 @@ impl GameService {
 
     pub async fn start_game_session(&self, cmd: StartGameSessionCommand) -> Result<String> {
         let session_id = self.id_gen.new_id();
-        
+
         let host = Player {
             id: cmd.player_id.clone(),
-            name: "Host".to_string(), 
+            name: "Host".to_string(),
         };
 
         let session = Session {
             id: session_id.clone(),
             game_type: cmd.game_type,
-            players: vec![host], 
-            host_id: cmd.player_id.clone(), 
+            players: vec![host],
+            host_id: cmd.player_id.clone(),
         };
 
         self.repo.save(&session.id.clone(), session).await?;
-        
-        info!("Game started: {}", session_id); 
+
+        info!("Game started: {}", session_id);
 
         Ok(session_id)
     }
@@ -69,17 +69,17 @@ impl GameService {
 
         // 1. Create engine (returns Box<dyn Engine>)
         let engine = self.engine_factory.create_engine(session.game_type.clone());
-        
+
         // 2. Wrap in Mutex. Box<dyn Engine> naturally implements Send if trait does.
         // We cast explicitly to the type expected by the UseCase.
         // Note: Box<dyn Engine> satisfies Box<dyn Engine + Send> because Engine: Send.
         let engine_mutex: Arc<Mutex<Box<dyn Engine + Send>>> = Arc::new(Mutex::new(engine as Box<dyn Engine + Send>));
-        
+
         let use_case = HandleGameCommandUseCase::new(
             self.repo.clone(),
             self.clock.clone(),
             self.command_registry.clone(),
-            engine_mutex, 
+            engine_mutex,
         );
 
         use_case.execute(session, command).await

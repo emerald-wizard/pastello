@@ -5,11 +5,11 @@ use std::any::Any; // Needed for EventBus trait
 
 #[async_trait]
 pub trait Clock: Send + Sync {
-    fn now_utc(&self) -> chrono::DateTime<chrono::Utc>; 
+    fn now_utc(&self) -> chrono::DateTime<chrono::Utc>;
 }
 
 pub trait EventBus: Send + Sync {
-    fn publish(&self, event: Box<dyn Any + Send>) -> Result<()> {
+    fn publish(&self, _event: Box<dyn Any + Send>) -> Result<()> {
         Ok(())
     }
 }
