@@ -37,7 +37,9 @@ pub struct EventMeta {
 }
 
 pub fn new_meta(clock: &dyn Clock) -> EventMeta {
-    EventMeta { at: clock.now_utc() }
+    EventMeta {
+        at: clock.now_utc(),
+    }
 }
 
 // --- DOMAIN EVENTS ---
@@ -93,6 +95,8 @@ pub enum DomainError {
     NothingToUndo,
     #[error("Invalid command")]
     InvalidCommand,
+    #[error("Invalid command payload: {0}")]
+    InvalidPayload(String),
     #[error("Internal domain error: {0}")]
     Internal(String),
 }
