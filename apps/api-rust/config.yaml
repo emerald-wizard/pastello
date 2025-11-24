@@ -1,0 +1,11 @@
+server:
+  host: "0.0.0.0"
+  port: 3001
+
+database:
+  # Ensure this matches your docker-compose service name if running in container
+  url: "postgres://postgres:password@localhost:5432/pastello_dev"
+
+auth:
+  # TODO: Move this to an environment variable in production!
+  jwt_secret: "dev-secret-do-not-use-in-prod"

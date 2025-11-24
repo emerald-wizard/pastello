@@ -21,7 +21,7 @@ pub enum ConfigError {
 // FIX: Ensure load_config is public
 pub fn load_config() -> Result<Config, ConfigError> {
     // Assuming standard config path, update if different
-    let config_path = "config/config.yml"; 
+    let config_path = "config.yml"; 
     let contents = fs::read_to_string(config_path)?;
     let config: Config = serde_yaml::from_str(&contents)?;
     Ok(config)

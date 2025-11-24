@@ -1,35 +1,40 @@
 pub mod auth;
 
-// FIX: AuthError is now correctly in scope from auth.rs
 use crate::adapters::inbound::ws::auth::{AuthError, Authenticator};
 use crate::AppState;
-use crate::domain::game::Session;
+use crate::domain::game::{Session, GameCommand, GameType};
+use crate::pb::runecraftstudios::pastello::web::game::v1::{
+    ClientEnvelope, client_envelope, 
+    GameCommandEnvelope, game_command_envelope
+};
+use crate::pb::runecraftstudios::pastello::game::types::v1::GameSessionId;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{State};
 use axum::response::IntoResponse;
 use futures_util::{StreamExt, SinkExt};
+use prost::Message as ProstMessage;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 pub fn router() -> axum::Router<AppState> {
-    // The route expects State<Arc<dyn Authenticator>> which is now derivable from AppState
     axum::Router::new().route("/ws/game", axum::routing::get(ws_handler))
 }
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    State(_state): State<AppState>, // Use _state since we only extract what's needed
-    State(authenticator): State<Arc<dyn Authenticator>>, // This now works due to FromRef<AppState> in main.rs
+    State(state): State<AppState>, 
+    State(authenticator): State<Arc<dyn Authenticator>>, 
 ) -> impl IntoResponse {
     info!("Upgrading WebSocket connection");
-    ws.on_upgrade(move |socket| handle_socket(socket, _state, authenticator))
+    ws.on_upgrade(move |socket| handle_socket(socket, state, authenticator))
 }
 
-async fn handle_socket(stream: WebSocket, _state: AppState, authenticator: Arc<dyn Authenticator>) {
+async fn handle_socket(stream: WebSocket, state: AppState, authenticator: Arc<dyn Authenticator>) {
     info!("New WebSocket connection");
     let (mut tx, mut rx) = stream.split();
 
+    // 1. Authentication Handshake
     let auth_result =
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             if let Some(Ok(Message::Text(token))) = rx.next().await {
@@ -42,56 +47,52 @@ async fn handle_socket(stream: WebSocket, _state: AppState, authenticator: Arc<d
 
     let session: Option<Session> = match auth_result {
         Ok(Ok(session)) => {
-            // FIX: Use host_id instead of user_id
             info!("Auth successful for user: {}", session.host_id);
-            tx.send(Message::Text("AUTH_SUCCESS".to_string().into()))
-                .await
-                .ok(); // Send success
+            // Notify client of success
+            // Note: Real impl would send a ServerEnvelope::AuthStatus
+            tx.send(Message::Text("AUTH_SUCCESS".to_string().into())).await.ok();
             Some(session)
         }
         Ok(Err(e)) => {
             warn!("Auth failed: {:?}", e);
-            tx.send(Message::Text("AUTH_FAILED".to_string().into()))
-                .await
-                .ok();
+            tx.send(Message::Text("AUTH_FAILED".to_string().into())).await.ok();
             None
         }
         Err(_) => {
             let e = AuthError::Timeout;
             warn!("Auth failed: {:?}", e);
-            tx.send(Message::Text("AUTH_FAILED".to_string().into()))
-                .await
-                .ok();
+            tx.send(Message::Text("AUTH_FAILED".to_string().into())).await.ok();
             None
         }
     };
 
     if session.is_none() {
-        warn!("Closing connection due to auth failure.");
+        return; // Close connection
+    }
+
+    let mut session = session.unwrap();
+    let player_id = session.host_id.clone();
+
+    // 2. CRITICAL: Persist the session so the Service can find it later
+    // In a real app, StartGame would create it, but for this test flow we ensure it exists.
+    if let Err(e) = state.game_service.force_save_session(session.clone()).await {
+        error!("Failed to initialize session in repo: {}", e);
         return;
     }
 
-    let session = session.unwrap();
-    // FIX: Use host_id instead of user_id
-    let player_id = session.host_id.clone();
-
-    // FIX (E0282): Explicitly type the Mutex contents
-    let _game_state_stream = Arc::new(Mutex::new(None as Option<Box<dyn std::any::Any + Send>>));
-
-    // Main game loop
+    // 3. Main Game Loop
     loop {
         tokio::select! {
-            // Listen for messages from the client
             Some(msg) = rx.next() => {
                 match msg {
-                    Ok(Message::Text(text)) => {
-                        info!("Received message from {}: {}", player_id, text);
-                        // TODO: Deserialize message, handle game logic
-                        // _state.game_service.handle_command(...)
-                    }
-                    Ok(Message::Binary(_bin)) => {
-                        info!("Received binary message from {}", player_id);
-                        // TODO: Deserialize protobuf, handle game logic
+                    Ok(Message::Binary(bin)) => {
+                        // Decode Protobuf
+                        match ClientEnvelope::decode(&bin[..]) {
+                            Ok(envelope) => {
+                                handle_client_message(&state, &mut session, envelope).await;
+                            }
+                            Err(e) => error!("Failed to decode Protobuf: {}", e),
+                        }
                     }
                     Ok(Message::Close(_)) => {
                         info!("Connection closed by {}", player_id);
@@ -101,25 +102,50 @@ async fn handle_socket(stream: WebSocket, _state: AppState, authenticator: Arc<d
                         error!("Error receiving message from {}: {:?}", player_id, e);
                         break;
                     }
-                    _ => {} // Ignore other message types (Ping, Pong)
+                    _ => {} // Ignore Text/Ping/Pong for game logic
                 }
             }
-            // Listen for updates from the game state
-            // Some(game_state) = game_state_stream.lock().await.next() => {
-            //     // TODO: Serialize game state and send to client
-            //     let payload = "TODO: serialize game state".to_string();
-            //     if tx.send(Message::Text(payload)).await.is_err() {
-            //         warn!("Failed to send game state to {}, connection closed?", player_id);
-            //         break;
-            //     }
-            // }
-            else => {
-                break; // Both streams are closed
-            }
+            else => break,
         }
     }
 
     info!("WebSocket connection handler finished for {}", player_id);
-    // TODO: Handle player disconnect logic (e.g., remove from game)
-    // _state.game_service.handle_disconnect(player_id).await;
+}
+
+async fn handle_client_message(state: &AppState, session: &mut Session, env: ClientEnvelope) {
+    match env.message {
+        Some(client_envelope::Message::StartGame(cmd)) => {
+            info!("Received StartGame command for type: {:?}", cmd.game_type);
+            // Logic to switch session game type could go here
+        },
+        Some(client_envelope::Message::GameCommand(wrapper)) => {
+            dispatch_game_command(state, session, wrapper).await;
+        },
+        None => warn!("Received empty envelope"),
+    }
+}
+
+async fn dispatch_game_command(state: &AppState, session: &Session, wrapper: GameCommandEnvelope) {
+    // Extract the inner command and convert to Box<dyn GameCommand>
+    // Ideally this mapping logic lives in a mapper, but for the fix we put it here 
+    // to bridge the gap immediately.
+    
+    let command: Option<Box<dyn GameCommand>> = match wrapper.command {
+        Some(game_command_envelope::Command::PuzzleMove(cmd)) => Some(Box::new(cmd)),
+        Some(game_command_envelope::Command::PuzzleUndo(cmd)) => Some(Box::new(cmd)),
+        Some(game_command_envelope::Command::TriviaSubmit(cmd)) => Some(Box::new(cmd)),
+        Some(game_command_envelope::Command::TriviaHint(cmd)) => Some(Box::new(cmd)),
+        None => None,
+    };
+
+    if let Some(cmd) = command {
+        // Use the session ID from the active socket session, 
+        // effectively ignoring the one in the message if it differs (security)
+        match state.game_service.handle_domain_command(&session.id, cmd).await {
+            Ok(_) => info!("Command handled successfully"),
+            Err(e) => error!("Failed to handle command: {:?}", e),
+        }
+    } else {
+        warn!("Unknown or empty game command received");
+    }
 }

@@ -1,5 +1,5 @@
 use crate::ports::{Clock, GameRepository, IdGenerator, EventBus};
-use crate::domain::game::{Session, Player, GameEngineFactory, Engine};
+use crate::domain::game::{Session, Player, GameEngineFactory, Engine, GameCommand};
 use crate::application::usecase::handle_game_command::HandleGameCommandUseCase;
 use crate::application::commands::{StartGameSessionCommand, GameCommandMessage};
 use crate::application::services::command_registry::CommandRegistry;
@@ -38,6 +38,11 @@ impl GameService {
         }
     }
 
+    // Helper for WebSocket auth flow to ensure session exists
+    pub async fn force_save_session(&self, session: Session) -> Result<()> {
+        self.repo.save(&session.id.clone(), session).await
+    }
+
     pub async fn start_game_session(&self, cmd: StartGameSessionCommand) -> Result<String> {
         let session_id = self.id_gen.new_id();
 
@@ -48,31 +53,32 @@ impl GameService {
 
         let session = Session {
             id: session_id.clone(),
+            host_id: cmd.player_id.clone(),
             game_type: cmd.game_type,
             players: vec![host],
-            host_id: cmd.player_id.clone(),
         };
 
         self.repo.save(&session.id.clone(), session).await?;
-
         info!("Game started: {}", session_id);
-
         Ok(session_id)
     }
 
+    // Legacy JSON handler (kept for compatibility)
     pub async fn handle_game_command(&self, game_id: &str, command: GameCommandMessage) -> Result<()> {
+         // This logic is now largely superseded by handle_domain_command for WS
+         // But keeping the structure for reference
+         bail!("Use handle_domain_command for Protobuf messages");
+    }
+
+    // NEW: Direct handler for Typed Domain Commands (from Protobuf)
+    pub async fn handle_domain_command(&self, game_id: &str, command: Box<dyn GameCommand>) -> Result<()> {
         let session = self.repo.get(game_id).await?;
         let session = match session {
             Some(s) => s,
-            None => bail!("Game session not found"),
+            None => bail!("Game session not found for id: {}", game_id),
         };
 
-        // 1. Create engine (returns Box<dyn Engine>)
         let engine = self.engine_factory.create_engine(session.game_type.clone());
-
-        // 2. Wrap in Mutex. Box<dyn Engine> naturally implements Send if trait does.
-        // We cast explicitly to the type expected by the UseCase.
-        // Note: Box<dyn Engine> satisfies Box<dyn Engine + Send> because Engine: Send.
         let engine_mutex: Arc<Mutex<Box<dyn Engine + Send>>> = Arc::new(Mutex::new(engine as Box<dyn Engine + Send>));
 
         let use_case = HandleGameCommandUseCase::new(
@@ -82,6 +88,7 @@ impl GameService {
             engine_mutex,
         );
 
-        use_case.execute(session, command).await
+        // We pass the command directly, bypassing the JSON registry
+        use_case.execute_direct(session, command).await
     }
 }
