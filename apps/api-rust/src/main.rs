@@ -51,7 +51,7 @@ use axum::{
 use std::net::SocketAddr;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use crate::adapters::inbound::ws::auth::FirebaseAuthenticator;
+use crate::adapters::inbound::ws::auth::StubAuthenticator;
 
 #[tokio::main]
 async fn main() {
@@ -63,7 +63,8 @@ async fn main() {
 
     info!("Loading configuration...");
     let config = load_config().expect("Failed to load config");
-    let server_addr = config.server_addr.clone();
+    let server_addr = config.server.host.clone();
+    let server_port = config.server.port.clone();
 
     // --- Dependency Injection (Adapters) ---
     let game_repo = Arc::new(MemoryRepo::new());
@@ -73,8 +74,8 @@ async fn main() {
     let rng = Arc::new(SystemRng::new());
     
     // Initialize authenticator
-    let authenticator: Arc<dyn Authenticator> = Arc::new(FirebaseAuthenticator::new( 
-        &config.firebase_project_id,
+    let authenticator: Arc<dyn Authenticator> = Arc::new(StubAuthenticator::new( 
+        &config.firebase.user,
     ));
 
     // --- Dependency Injection (Services) ---
@@ -107,7 +108,7 @@ async fn main() {
         .with_state(app_state);
 
     // --- Server Start ---
-    let addr = server_addr
+    let addr = format!("{}:{}", server_addr, server_port)
         .parse::<SocketAddr>()
         .expect("Invalid server address");
     info!("Starting server on {}", addr);

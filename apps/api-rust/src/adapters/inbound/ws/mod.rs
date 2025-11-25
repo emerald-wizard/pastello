@@ -2,19 +2,17 @@ pub mod auth;
 
 use crate::adapters::inbound::ws::auth::{AuthError, Authenticator};
 use crate::AppState;
-use crate::domain::game::{Session, GameCommand, GameType};
+use crate::domain::game::{Session, GameCommand};
 use crate::pb::runecraftstudios::pastello::web::game::v1::{
     ClientEnvelope, client_envelope, 
     GameCommandEnvelope, game_command_envelope
 };
-use crate::pb::runecraftstudios::pastello::game::types::v1::GameSessionId;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{State};
 use axum::response::IntoResponse;
 use futures_util::{StreamExt, SinkExt};
 use prost::Message as ProstMessage;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tracing::{error, info, warn};
 
 pub fn router() -> axum::Router<AppState> {

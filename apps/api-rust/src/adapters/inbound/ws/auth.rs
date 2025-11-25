@@ -39,7 +39,43 @@ pub trait Authenticator: Send + Sync {
     async fn authenticate(&self, token: &str) -> Result<Session, AuthError>;
 }
 
-pub struct FirebaseAuthenticator {
+// --- The Stub Implementation ---
+pub struct StubAuthenticator {
+    jwks_url: String,
+    project_id: String,
+    keys: RwLock<HashMap<String, DecodingKey>>,
+    client: Client,
+}
+
+impl StubAuthenticator {
+    pub fn new(project_id: &str) -> Self {
+        Self {
+            jwks_url: "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com".to_string(),
+            project_id: project_id.to_string(),
+            keys: RwLock::new(HashMap::new()),
+            client: Client::new(),
+        }
+    }
+}
+
+#[async_trait]
+impl Authenticator for StubAuthenticator {
+    async fn authenticate(&self, _token: &str) -> Result<Session, AuthError> {
+        // Always succeed!
+        // We create a fake session so the GameService has something to work with.
+        Ok(Session {
+            id: "stub-game-session-id".to_string(), // Fixed Game ID for testing
+            host_id: "stub-user-123".to_string(),   // Fixed User ID
+            game_type: crate::domain::game::GameType::Puzzle,            // Default Game Type
+            players: vec![crate::domain::game::Player {
+                id: "stub-user-123".to_string(),
+                name: "Stubby The Tester".to_string(),
+            }],
+        })
+    }
+}
+
+pub struct FirebaseAuthenticator { 
     jwks_url: String,
     project_id: String,
     keys: RwLock<HashMap<String, DecodingKey>>,

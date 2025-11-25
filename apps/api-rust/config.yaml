@@ -2,6 +2,9 @@ server:
   host: "0.0.0.0"
   port: 3001
 
+firebase:
+  user: "firebase_user"
+
 database:
   # Ensure this matches your docker-compose service name if running in container
   url: "postgres://postgres:password@localhost:5432/pastello_dev"
