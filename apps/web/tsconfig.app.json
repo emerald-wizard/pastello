@@ -10,16 +10,14 @@
   ],
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    // --- MODIFICATIONS START ---
-    // "baseUrl": "." has been REMOVED.
-    // The "@gen/*" alias has been REMOVED.
-    // Your vite.config.ts handles the "@/*" alias,
-    // so we can use that file as the source of truth.
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@gen/*": [
+        "./node_modules/@runecraft-studios/pastello-contracts/dist/*"
       ]
     }
-    // --- MODIFICATIONS END ---
   }
 }

@@ -14,7 +14,11 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // Directly load generated protobufs from the contracts package
+      '@gen': fileURLToPath(
+        new URL('./node_modules/@runecraft-studios/pastello-contracts/dist', import.meta.url),
+      ),
     },
   },
 })

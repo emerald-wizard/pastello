@@ -31,6 +31,10 @@ const state = reactive<State>({
   moves: []
 })
 
+const emit = defineEmits<{
+  (e: 'move', payload: { fromX: number; fromY: number; toX: number; toY: number }): void
+}>()
+
 const solved  = computed(() => isSolved(state.board))
 const canUndo = computed(() => state.moves.length > 0)
 
@@ -64,6 +68,7 @@ function clickAt(x: number, y: number) {
       return
     }
     state.moves.push(cmd)
+    emit('move', { fromX: cmd.fromX, fromY: cmd.fromY, toX: cmd.toX, toY: cmd.toY })
     state.lastResult = `✅ (${x},${y}) → (${empty.x},${empty.y})`
   })
 }

@@ -1,90 +1,54 @@
-port { GameClient } from '@/api/gameClient'; // Using @ alias
-import {
-    Envelope,
-} from '@gen/runecraftstudios/pastello/web/game/v1/envelope';
+import { GameClient } from '@/api/gameClient'
+import { useGameStore } from '@/app/stores/game.store'
+import { GameType } from '@gen/runecraftstudios/pastello/game/types/v1/types'
+import { GameCommandEnvelope } from '@gen/runecraftstudios/pastello/web/game/v1/envelope'
 
-// --- Import our NEW stores ---
-import { useAuthStore } from '@/app/stores/auth.store';
-import { useGameStore } from '@/app/stores/game.store';
+const VITE_API_WS_URL = import.meta.env.VITE_API_WS_URL || 'ws://localhost:8080/ws/game'
 
-// Get the WS URL
-const VITE_API_WS_URL = import.meta.env.VITE_API_WS_URL;
-if (!VITE_API_WS_URL) {
-    throw new Error('Missing VITE_API_WS_URL in .env.local');
-}
+// Reuse a single client instance for the entire app.
+const client = new GameClient(VITE_API_WS_URL)
 
-// Create a single, shared client instance
-const client = new GameClient(VITE_API_WS_URL);
-
-// --- This composable is now stateless! ---
-// It reads and writes to the Pinia stores.
 export function useGameClient() {
-    // Get a reference to the stores
-    const authStore = useAuthStore();
-    const gameStore = useGameStore();
+  const gameStore = useGameStore()
 
-    // Link client events to the gameStore
-    client.onOpen = () => {
-        gameStore.setConnectionStatus({ isConnected: true, isConnecting: false, error: null });
-    };
-    client.onClose = () => {
-        gameStore.setConnectionStatus({ isConnected: false, isConnecting: false });
-        gameStore.clearSession(); // Clear game data on disconnect
-    };
-    client.onError = (error) => {
-        gameStore.setConnectionStatus({
-            isConnected: false,
-            isConnecting: false,
-            error: error?.message || 'A WebSocket error occurred.'
-        });
-    };
+  client.onOpen = () => {
+    gameStore.setConnectionStatus({ isConnected: true, isConnecting: false, error: null })
+  }
+  client.onClose = () => {
+    gameStore.setConnectionStatus({ isConnected: false, isConnecting: false })
+    gameStore.clearSession()
+  }
+  client.onError = (error: Error) => {
+    gameStore.setConnectionStatus({
+      isConnected: false,
+      isConnecting: false,
+      error: error?.message || 'A WebSocket error occurred.',
+    })
+  }
 
-    /**
-     * --- MODIFIED connect() ---
-     * It now gets the ticket from the authStore.
-     */
-    const connect = async (ticket: string) => {
-        const { isConnected, isConnecting } = gameStore;
-        if (!isConnected && !isConnecting) {
-            gameStore.setConnectionStatus({ isConnecting: true });
-            client.connectAndAuth(ticket);
-        }
-    };
+  const connect = async (ticket: string) => {
+    if (gameStore.isConnected || gameStore.isConnecting) return
+    gameStore.setConnectionStatus({ isConnecting: true, error: null })
+    await client.connectAndAuth(ticket)
+    gameStore.setConnectionStatus({ isConnected: true, isConnecting: false, error: null })
+  }
 
-    const disconnect = () => {
-        client.disconnect();
-    };
+  const disconnect = () => {
+    client.disconnect()
+  }
 
-    /**
-     * --- MODIFIED sendRequest() ---
-     * It no longer updates state here. It just sends.
-     * We will update state by listening for broadcast events.
-     */
-    const sendRequest = async (
-        body: Envelope['body'],
-    ): Promise<Envelope> => {
-        try {
-            const reply = await client.sendRequest(body);
+  const sendStartGame = (gameType: GameType) => {
+    client.sendStartGame(gameType)
+  }
 
-            // We could update the gameStore session here if needed,
-            // e.g., if the reply contains new session data.
-            // if (reply.body?.$case === '...') {
-            //   gameStore.setSession(...)
-            // }
+  const sendGameCommand = (command: GameCommandEnvelope['command']) => {
+    client.sendGameCommand(command)
+  }
 
-            return reply;
-        } catch (error: any) {
-            console.error('Request failed:', error);
-            gameStore.setConnectionStatus({ error: error.message });
-            throw error;
-        }
-    };
-
-    return {
-        // Note: We no longer return 'state'.
-        // Components will get state from the stores.
-        connect,
-        disconnect,
-        sendRequest,
-    };
+  return {
+    connect,
+    disconnect,
+    sendStartGame,
+    sendGameCommand,
+  }
 }
